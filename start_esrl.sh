@@ -2,6 +2,12 @@
 
 BASE=~/Documents/Development/Experimental/eSRL/eSRLPlatform
 
+BACKEND_API_URL="${BACKEND_API_URL:-http://127.0.0.1:5140}"
+GAME_ENGINE_URL="${GAME_ENGINE_URL:-http://127.0.0.1:8000}"
+VIDEO_TTS_MAX_CONCURRENCY="${VIDEO_TTS_MAX_CONCURRENCY:-5}"
+VIDEO_RENDER_MAX_CONCURRENCY="${VIDEO_RENDER_MAX_CONCURRENCY:-3}"
+VIDEO_FFMPEG_MAX_CONCURRENCY="${VIDEO_FFMPEG_MAX_CONCURRENCY:-3}"
+
 osascript <<EOF
 tell application "Terminal"
     activate
@@ -18,7 +24,7 @@ tell application "Terminal"
     
     delay 1
     
-    do script "cd $BASE/esrlBackend && source venv/bin/activate && python -m uvicorn main:app --host 0.0.0.0 --port 5140 --reload" in front window
+    do script "cd $BASE/esrlBackend && source venv/bin/activate && export GAME_ENGINE_API_URL=$GAME_ENGINE_URL && export VIDEO_TTS_MAX_CONCURRENCY=$VIDEO_TTS_MAX_CONCURRENCY && export VIDEO_RENDER_MAX_CONCURRENCY=$VIDEO_RENDER_MAX_CONCURRENCY && export VIDEO_FFMPEG_MAX_CONCURRENCY=$VIDEO_FFMPEG_MAX_CONCURRENCY && python3 -m uvicorn main:app --host 0.0.0.0 --port 5140 --reload" in front window
     
     delay 1
     
@@ -29,7 +35,7 @@ tell application "Terminal"
     
     delay 1
     
-    do script "cd $BASE/esrl-app && npm run dev" in front window
+    do script "cd $BASE/esrl-app && export NEXT_PUBLIC_API_URI=$BACKEND_API_URL && npm run dev" in front window
     
 end tell
 EOF

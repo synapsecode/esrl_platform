@@ -14,8 +14,8 @@ def _get_client():
     return genai.Client(api_key=api_key)
 
 
-def retrieve_context(query: str, top_k: int = 5) -> Dict:
-    return query_similar(query, top_k=top_k)
+def retrieve_context(query: str, top_k: int = 5, document_id: str | None = None) -> Dict:
+    return query_similar(query, top_k=top_k, document_id=document_id)
 
 
 def _score_block(query_terms: List[str], doc: str, meta: Dict) -> int:

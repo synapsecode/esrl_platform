@@ -88,14 +88,17 @@ def upsert_images(image_chunks: List[Dict]) -> None:
     )
 
 
-def query_similar(text: str, top_k: int = 5) -> Dict:
+def query_similar(text: str, top_k: int = 5, document_id: str | None = None) -> Dict:
     collection = get_chroma_collection()
     embedding = embed_texts([text])[0]
-    return collection.query(
-        query_embeddings=[embedding],
-        n_results=top_k,
-        include=["documents", "metadatas", "distances"]
-    )
+    query_args = {
+        "query_embeddings": [embedding],
+        "n_results": top_k,
+        "include": ["documents", "metadatas", "distances"],
+    }
+    if document_id:
+        query_args["where"] = {"$and": [{"document_id": document_id}, {"type": "text"}]}
+    return collection.query(**query_args)
 
 
 def get_images_for_document(document_id: str, limit: int = 5) -> Dict:

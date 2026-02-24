@@ -4,6 +4,7 @@ import { Send } from "lucide-react"
 import { useParams } from "next/navigation"
 import { useState, useRef, useEffect } from "react"
 import ReactMarkdown from "react-markdown"
+import { getApiBase } from "../../../lib/api"
 
 export default function DocumentPage() {
     const [leftWidth, setLeftWidth] = useState(25)
@@ -15,6 +16,7 @@ export default function DocumentPage() {
     const [summaryLoading, setSummaryLoading] = useState(true)
     const [notesLoading, setNotesLoading] = useState(true)
     const [videoLoading, setVideoLoading] = useState(true)
+    const [videoError, setVideoError] = useState("")
     const [error, setError] = useState("")
     const [gameTaskId, setGameTaskId] = useState("")
     const [gameStatus, setGameStatus] = useState("idle")
@@ -22,9 +24,18 @@ export default function DocumentPage() {
     const [gameError, setGameError] = useState("")
     const [gameLaunching, setGameLaunching] = useState(false)
     const hasAutoLaunched = useRef(false)
+    const initializedDocRef = useRef("")
 
-    const docId = useParams().id
-    const apiBase = process.env.NEXT_PUBLIC_API_URI || "http://127.0.0.1:8000"
+    const routeDocId = useParams().id
+    const rawDocId = Array.isArray(routeDocId) ? routeDocId[0] : routeDocId || ""
+    const docId = (() => {
+        try {
+            return decodeURIComponent(rawDocId)
+        } catch {
+            return rawDocId
+        }
+    })()
+    const apiBase = getApiBase()
 
     const isDragging = useRef(null)
 
@@ -62,13 +73,16 @@ export default function DocumentPage() {
     }, [])
 
     useEffect(() => {
-        if (!docId) return
+        if (!docId || initializedDocRef.current === docId) return
+        initializedDocRef.current = docId
 
         const fetchData = async () => {
+            const encodedDocId = encodeURIComponent(docId)
             setError("")
             setSummaryLoading(true)
             setNotesLoading(true)
             setVideoLoading(true)
+            setVideoError("")
             setGameError("")
             setGameTaskId("")
             setGameStatus("queued")
@@ -80,7 +94,7 @@ export default function DocumentPage() {
                 headers: {
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({ document_id: docId }),
             })
                 .then((res) => {
                     if (!res.ok) throw new Error("Summary request failed")
@@ -102,7 +116,7 @@ export default function DocumentPage() {
                 headers: {
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({ document_id: docId }),
             })
                 .then((res) => {
                     if (!res.ok) throw new Error("Notes request failed")
@@ -119,7 +133,7 @@ export default function DocumentPage() {
                     setNotesLoading(false)
                 })
 
-            const videoPromise = fetch(`${apiBase}/generate_video/${docId}`, {
+            const videoPromise = fetch(`${apiBase}/generate_video/${encodedDocId}`, {
                 method: "POST",
             })
                 .then((res) => {
@@ -127,16 +141,20 @@ export default function DocumentPage() {
                     return res.json()
                 })
                 .then((data) => {
+                    if (data?.error) {
+                        setVideoError(data.error)
+                    }
                     setVideo(data)
                 })
                 .catch((err) => {
                     console.error("Video request failed:", err)
+                    setVideoError("Video generation failed.")
                 })
                 .finally(() => {
                     setVideoLoading(false)
                 })
 
-            const gamePromise = fetch(`${apiBase}/game/generate/${docId}`, {
+            const gamePromise = fetch(`${apiBase}/game/generate/${encodedDocId}`, {
                 method: "POST",
             })
                 .then((res) => {
@@ -236,7 +254,7 @@ export default function DocumentPage() {
 
                 {/* CHAT PANEL */}
                 <div className="flex-1 bg-black flex flex-col">
-                    <ChatPanel apiBase={apiBase} />
+                    <ChatPanel apiBase={apiBase} documentId={docId} />
                 </div>
 
                 {/* DRAG HANDLE */}
@@ -270,7 +288,12 @@ export default function DocumentPage() {
                                 }
                             }}
                         />
-                        <VideoSection video_url={videoUrl} loading={videoLoading} onOpen={() => setShowVideo(true)} />
+                        <VideoSection
+                            video_url={videoUrl}
+                            loading={videoLoading}
+                            error={videoError}
+                            onOpen={() => setShowVideo(true)}
+                        />
                     </div>
                 </div>
             </div>
@@ -290,6 +313,10 @@ function buildMediaUrl(path, apiBase) {
 }
 
 function Navbar({ docId }) {
+    const label = docId
+        ? `${docId.slice(0, 3)}...${docId.slice(-3)}`
+        : "loading..."
+
     return (
         <nav className="flex items-center justify-between px-8 py-6">
             <button className="bg-zinc-800 text-sm px-4 py-2 rounded-full hover:bg-zinc-700 transition">eSRL</button>
@@ -300,7 +327,7 @@ function Navbar({ docId }) {
                         Upload PDF
                     </a>
                 </div>
-                <span className=" transition text-sm text-green-600">eSRL Doc: {docId.slice(0, 3) + "..." + docId.slice(-3, -1) + docId.charAt(docId.length - 1)}</span>
+                <span className=" transition text-sm text-green-600">eSRL Doc: {label}</span>
             </div>
         </nav>
     )
@@ -613,7 +640,7 @@ function QuickNotesOverlay({
     )
 }
 
-function ChatPanel({ apiBase }) {
+function ChatPanel({ apiBase, documentId }) {
     const [messages, setMessages] = useState([{ role: "assistant", content: "Ask me anything about this document." }])
     const [sending, setSending] = useState(false)
 
@@ -650,7 +677,7 @@ function ChatPanel({ apiBase }) {
                             headers: {
                                 "Content-Type": "application/json",
                             },
-                            body: JSON.stringify({ messages: updatedMessages }),
+                            body: JSON.stringify({ messages: updatedMessages, document_id: documentId }),
                         })
 
                         const data = await response.json()
@@ -772,7 +799,7 @@ function ChatInput({ onSend, sending }) {
     )
 }
 
-function VideoSection({ video_url, loading, onOpen }) {
+function VideoSection({ video_url, loading, error, onOpen }) {
     return (
         <div className="h-full flex flex-col justify-between">
             {/* Header */}
@@ -802,6 +829,7 @@ function VideoSection({ video_url, loading, onOpen }) {
 
                 {/* Caption */}
                 <p className="text-zinc-500 text-xs mt-3">Click to expand and view the full generated explanation video.</p>
+                {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
             </div>
 
             {/* Fullscreen Button */}

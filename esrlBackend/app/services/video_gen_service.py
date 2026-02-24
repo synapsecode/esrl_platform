@@ -56,6 +56,10 @@ def _create_run_dirs(document_id: str) -> Dict[str, str]:
     return dirs
 
 
+def _log(run_id: str, message: str):
+    print(f"[video:{run_id}] {message}", flush=True)
+
+
 def _get_client():
     api_key = os.getenv("GEMINI_API_KEY", "")
     if not api_key:
@@ -540,16 +544,19 @@ async def _prepare_slide_assets(
     audio_dir: str,
     html_dir: str,
     tts_semaphore: asyncio.Semaphore,
+    run_id: str,
 ) -> Dict[str, Any]:
     voice_text = slide.get("voiceover") or slide.get("explanation")
     if not voice_text:
         return {"slide": slide_id, "ok": False, "stage": "prepare", "error": "Missing voice text"}
 
     try:
+        _log(run_id, f"slide {slide_id}: preparing assets")
         async with tts_semaphore:
             audio_path = await asyncio.to_thread(generate_voice, voice_text, slide_id, audio_dir)
         duration = await asyncio.to_thread(get_audio_duration, audio_path)
         html_path = await asyncio.to_thread(render_slide_html, slide, duration, slide_id, all_images, html_dir)
+        _log(run_id, f"slide {slide_id}: assets ready (duration={duration:.2f}s)")
         return {
             "slide": slide_id,
             "ok": True,
@@ -558,6 +565,7 @@ async def _prepare_slide_assets(
             "html_path": html_path,
         }
     except Exception as exc:
+        _log(run_id, f"slide {slide_id}: prepare failed ({exc})")
         return {"slide": slide_id, "ok": False, "stage": "prepare", "error": str(exc)}
 
 
@@ -567,9 +575,11 @@ async def _render_and_mux_slide(
     render_semaphore: asyncio.Semaphore,
     mux_semaphore: asyncio.Semaphore,
     video_dir: str,
+    run_id: str,
 ) -> Dict[str, Any]:
     slide_id = prepared["slide"]
     try:
+        _log(run_id, f"slide {slide_id}: rendering html -> webm")
         async with render_semaphore:
             webm_path = await html_to_video(
                 prepared["html_path"],
@@ -579,6 +589,7 @@ async def _render_and_mux_slide(
                 browser=browser,
             )
 
+        _log(run_id, f"slide {slide_id}: muxing webm + audio -> mp4")
         async with mux_semaphore:
             mp4_path = await asyncio.to_thread(
                 image_audio_to_video,
@@ -589,9 +600,46 @@ async def _render_and_mux_slide(
                 video_dir,
             )
 
+        _log(run_id, f"slide {slide_id}: completed")
         return {"slide": slide_id, "ok": True, "video_path": mp4_path}
     except Exception as exc:
+        _log(run_id, f"slide {slide_id}: render/mux failed ({exc})")
         return {"slide": slide_id, "ok": False, "stage": "render_or_mux", "error": str(exc)}
+
+
+async def _process_single_slide(
+    slide_id: int,
+    slide: Dict[str, Any],
+    image_chunks: List[Dict[str, Any]],
+    audio_dir: str,
+    html_dir: str,
+    video_dir: str,
+    browser: Browser,
+    tts_semaphore: asyncio.Semaphore,
+    render_semaphore: asyncio.Semaphore,
+    mux_semaphore: asyncio.Semaphore,
+    run_id: str,
+) -> Dict[str, Any]:
+    prepared = await _prepare_slide_assets(
+        slide_id=slide_id,
+        slide=slide,
+        all_images=image_chunks,
+        audio_dir=audio_dir,
+        html_dir=html_dir,
+        tts_semaphore=tts_semaphore,
+        run_id=run_id,
+    )
+    if not prepared.get("ok"):
+        return prepared
+
+    return await _render_and_mux_slide(
+        prepared=prepared,
+        browser=browser,
+        render_semaphore=render_semaphore,
+        mux_semaphore=mux_semaphore,
+        video_dir=video_dir,
+        run_id=run_id,
+    )
 
 
 async def generate_video_parallel(slides: List[Dict[str, Any]], image_chunks: List[Dict[str, Any]], document_id: str):
@@ -612,42 +660,41 @@ async def generate_video_parallel(slides: List[Dict[str, Any]], image_chunks: Li
     render_semaphore = asyncio.Semaphore(render_max)
     mux_semaphore = asyncio.Semaphore(mux_max)
 
-    prepare_tasks = [
-        _prepare_slide_assets(i, slide, image_chunks, audio_dir, html_dir, tts_semaphore)
-        for i, slide in enumerate(slides)
-    ]
-    prepared_results = await asyncio.gather(*prepare_tasks)
+    _log(
+        run_id,
+        (
+            f"start document={document_id} slides={len(slides)} "
+            f"(tts={tts_max}, render={render_max}, ffmpeg={mux_max})"
+        ),
+    )
 
-    slide_errors = []
-    prepared_ok = []
-    for result in prepared_results:
-        if result.get("ok"):
-            prepared_ok.append(result)
-        else:
-            slide_errors.append({"slide": result.get("slide"), "stage": result.get("stage"), "error": result.get("error")})
-
-    if not prepared_ok:
-        return {
-            "error": "Video generation failed",
-            "slides_requested": len(slides),
-            "slides_generated": 0,
-            "slide_errors": slide_errors,
-            "run_id": run_id,
-        }
-
+    started_at = time.perf_counter()
     async with async_playwright() as p:
         browser = await p.chromium.launch()
         try:
-            render_tasks = [
-                _render_and_mux_slide(item, browser, render_semaphore, mux_semaphore, video_dir)
-                for item in prepared_ok
+            slide_tasks = [
+                _process_single_slide(
+                    slide_id=i,
+                    slide=slide,
+                    image_chunks=image_chunks,
+                    audio_dir=audio_dir,
+                    html_dir=html_dir,
+                    video_dir=video_dir,
+                    browser=browser,
+                    tts_semaphore=tts_semaphore,
+                    render_semaphore=render_semaphore,
+                    mux_semaphore=mux_semaphore,
+                    run_id=run_id,
+                )
+                for i, slide in enumerate(slides)
             ]
-            render_results = await asyncio.gather(*render_tasks)
+            results = await asyncio.gather(*slide_tasks)
         finally:
             await browser.close()
 
+    slide_errors = []
     videos_ok = []
-    for result in render_results:
+    for result in results:
         if result.get("ok"):
             videos_ok.append(result)
         else:
@@ -665,6 +712,8 @@ async def generate_video_parallel(slides: List[Dict[str, Any]], image_chunks: Li
     videos_ok.sort(key=lambda item: item["slide"])
     ordered_paths = [item["video_path"] for item in videos_ok]
     final_video = await asyncio.to_thread(stitch_videos, ordered_paths, video_dir, "final.mp4")
+    elapsed = time.perf_counter() - started_at
+    _log(run_id, f"complete slides_ok={len(ordered_paths)}/{len(slides)} elapsed={elapsed:.2f}s")
 
     return {
         "message": "Video generated successfully",
@@ -674,4 +723,5 @@ async def generate_video_parallel(slides: List[Dict[str, Any]], image_chunks: Li
         "slide_errors": slide_errors,
         "run_id": run_id,
         "concurrency": {"tts": tts_max, "render": render_max, "ffmpeg": mux_max},
+        "elapsed_seconds": round(elapsed, 2),
     }

@@ -26,9 +26,9 @@ Integration path used by the app:
 2. Frontend calls backend APIs (`NEXT_PUBLIC_API_URI`)
 3. Backend calls `game-engine` for game generation/launch (`GAME_ENGINE_API_URL`)
 
-Important port/config note:
-- `esrl-app/app/chat/[id]/page.js` defaults API base to `http://127.0.0.1:8000` if `NEXT_PUBLIC_API_URI` is missing.
-- In the provided startup script, backend runs on `5140`. So `NEXT_PUBLIC_API_URI` should be explicitly set to avoid wrong routing.
+Port/config alignment:
+- Frontend now resolves API base through `esrl-app/lib/api.js` with default `http://127.0.0.1:5140`.
+- `start_esrl.sh` exports `NEXT_PUBLIC_API_URI` explicitly so UI/backend point to the same origin in local runs.
 
 ## 3) Core Data Flow
 
@@ -61,6 +61,7 @@ Entry endpoints:
 Flow:
 1. Embed query
 2. Retrieve top text chunks from Chroma (`query_similar`)
+   - Supports optional `document_id` filter to keep retrieval scoped to the active document
 3. Rank retrieved blocks with additional keyword scoring + discourse weighting
 4. Generate answer using Gemini (`gemini-2.5-flash`) constrained to provided context
 5. Retrieve related image vectors for same `document_id`
@@ -78,7 +79,8 @@ Endpoints:
 - `POST /notes/summary`
 
 Behavior:
-- If request body has no text, backend falls back to the most recently uploaded PDF (`last_uploaded.json`)
+- If request body has `document_id`, backend builds source text from that document’s stored chunks.
+- If request body has no `text` and no `document_id`, backend falls back to the most recently uploaded PDF (`last_uploaded.json`).
 - Notes generation prompt asks Gemini for JSON with:
   - `flashcards`
   - `cheat_sheet`
@@ -100,6 +102,7 @@ Flow:
    - Record each slide as WebM using Playwright Chromium
    - Mux WebM + WAV into MP4 with FFmpeg
 5. Sort successful slides by `slide_index` and stitch with FFmpeg concat into final MP4
+6. Emit run-scoped terminal progress logs per slide (`[video:<run_id>] ...`) for easier debugging
 
 Artifacts:
 - Run-scoped outputs under `media/runs/<run_id>/`:
@@ -164,7 +167,7 @@ Major service modules:
 - `notes_service.py`: structured study notes generation
 - `summarizer_service.py`: layered summarization
 - `image_service.py`: BLIP caption + OCR text extraction
-- `video_gen_service.py`: slide plan + parallelized TTS/render/mux pipeline with deterministic ordered stitching
+- `video_gen_service.py`: slide plan + streaming parallelized TTS/render/mux pipeline with deterministic ordered stitching and per-slide terminal logs
 
 Auxiliary UI:
 - `streamlit_app.py` provides a parallel demo/testing interface for backend endpoints
@@ -193,11 +196,13 @@ Web UI mode:
 
 Backend (`esrlBackend/main.py`):
 - `GET /`
+- `GET /health`
 - `POST /upload_pdf`
 - `POST /rag`
 - `POST /chat`
 - `POST /notes`
 - `POST /notes/summary`
+- `GET /documents/last`
 - `POST /generate_video/{document_id}` (returns `video_path`, `run_id`, slide counts/errors, and active concurrency settings)
 - `POST /game/generate/{document_id}`
 - `GET /game/status/{task_id}`
@@ -205,6 +210,7 @@ Backend (`esrlBackend/main.py`):
 
 Game-engine (`game-engine/app.py`):
 - `GET /` (HTML UI)
+- `GET /health`
 - `POST /api/generate`
 - `GET /api/status/{task_id}`
 - `POST /api/launch/{task_id}`
@@ -221,7 +227,7 @@ Game-engine (`game-engine/app.py`):
 
 ### Game-engine
 - `pygames/`: generated game scripts
-- In-memory only task status map (`generation_status`), not persisted
+- In-memory task status map (`generation_status`) with thread-safe updates and bounded retention (`MAX_TASK_HISTORY`)
 
 ## 7) External Dependencies and Infra Requirements
 
@@ -248,15 +254,16 @@ Backend:
 - `GEMINI_API_KEY`: required for chat/notes/summary/video
 - `GAME_ENGINE_API_URL`: default `http://127.0.0.1:8000`
 - `GAME_ENGINE_TIMEOUT_SECONDS`: default `30`
-- `VIDEO_TTS_MAX_CONCURRENCY`: max parallel TTS tasks (default `3`)
-- `VIDEO_RENDER_MAX_CONCURRENCY`: max parallel Playwright render tasks (default `2`)
-- `VIDEO_FFMPEG_MAX_CONCURRENCY`: max parallel FFmpeg mux tasks (default `2`)
+- `VIDEO_TTS_MAX_CONCURRENCY`: max parallel TTS tasks (default `5`)
+- `VIDEO_RENDER_MAX_CONCURRENCY`: max parallel Playwright render tasks (default `3`)
+- `VIDEO_FFMPEG_MAX_CONCURRENCY`: max parallel FFmpeg mux tasks (default `3`)
 
 Frontend:
 - `NEXT_PUBLIC_API_URI`: backend base URL (should point to `http://127.0.0.1:5140` in current local setup)
 
 Game-engine:
 - `GOOGLE_API_KEY`: required for game generation agents
+- `MAX_TASK_HISTORY`: max in-memory retained tasks for `/api/history` and status storage (default `200`)
 
 ## 9) Current Architectural Characteristics
 

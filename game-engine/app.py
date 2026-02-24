@@ -6,6 +6,8 @@ from pydantic import BaseModel
 import subprocess
 import os
 import uuid
+import sys
+import threading
 from datetime import datetime
 from typing import Dict, Optional
 from agents import game_design_agent, level_design_agent, code_generation_agent
@@ -16,26 +18,61 @@ templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 generation_status: Dict[str, Dict] = {}
+status_lock = threading.Lock()
+MAX_TASK_HISTORY = int(os.getenv("MAX_TASK_HISTORY", "200"))
 
 class GameRequest(BaseModel):
     study_notes: str
 
+
+def _set_task(task_id: str, **updates):
+    with status_lock:
+        if task_id in generation_status:
+            generation_status[task_id].update(updates)
+
+
+def _get_task(task_id: str) -> Optional[Dict]:
+    with status_lock:
+        task = generation_status.get(task_id)
+        return dict(task) if task else None
+
+
+def _put_task(task_id: str, payload: Dict):
+    with status_lock:
+        generation_status[task_id] = payload
+
+
+def _task_items_snapshot():
+    with status_lock:
+        return list(generation_status.items())
+
+
+def _prune_history():
+    with status_lock:
+        if len(generation_status) <= MAX_TASK_HISTORY:
+            return
+        ordered = sorted(
+            generation_status.items(),
+            key=lambda item: (item[1].get("created_at") or "", item[0]),
+            reverse=True,
+        )
+        retained = dict(ordered[:MAX_TASK_HISTORY])
+        generation_status.clear()
+        generation_status.update(retained)
+
 def run_game_generation(task_id: str, study_notes: str):
     try:
-        generation_status[task_id]["status"] = "generating_design"
-        generation_status[task_id]["phase"] = "Game Design (1/3)"
+        _set_task(task_id, status="generating_design", phase="Game Design (1/3)")
 
         game_design = game_design_agent.run(study_notes)
-        generation_status[task_id]["game_design"] = game_design
+        _set_task(task_id, game_design=game_design)
 
-        generation_status[task_id]["status"] = "generating_levels"
-        generation_status[task_id]["phase"] = "Level Design (2/3)"
+        _set_task(task_id, status="generating_levels", phase="Level Design (2/3)")
 
         level_design = level_design_agent.run(game_design)
-        generation_status[task_id]["level_design"] = level_design
+        _set_task(task_id, level_design=level_design)
 
-        generation_status[task_id]["status"] = "generating_code"
-        generation_status[task_id]["phase"] = "Code Generation (3/3)"
+        _set_task(task_id, status="generating_code", phase="Code Generation (3/3)")
 
         code = code_generation_agent.run(game_design, level_design)
         code = code.replace('```python', '').replace('```', '').strip()
@@ -46,49 +83,59 @@ def run_game_generation(task_id: str, study_notes: str):
         with open(game_file, "w", encoding="utf-8") as f:
             f.write(code)
 
-        generation_status[task_id]["status"] = "completed"
-        generation_status[task_id]["phase"] = "Complete"
-        generation_status[task_id]["game_file"] = game_file
-        generation_status[task_id]["code"] = code
-        generation_status[task_id]["completed_at"] = datetime.now().isoformat()
+        _set_task(
+            task_id,
+            status="completed",
+            phase="Complete",
+            game_file=game_file,
+            code=code,
+            completed_at=datetime.now().isoformat(),
+        )
 
     except Exception as e:
-        generation_status[task_id]["status"] = "failed"
-        generation_status[task_id]["error"] = str(e)
-        generation_status[task_id]["phase"] = "Failed"
+        _set_task(task_id, status="failed", error=str(e), phase="Failed")
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "game-engine", "tasks": len(_task_items_snapshot())}
+
 @app.post("/api/generate")
 async def generate_game(game_request: GameRequest, background_tasks: BackgroundTasks):
     task_id = str(uuid.uuid4())
+    text = (game_request.study_notes or "").strip()
+    if not text:
+        return JSONResponse({"error": "study_notes cannot be empty"}, status_code=400)
 
-    generation_status[task_id] = {
+    _put_task(task_id, {
         "status": "queued",
         "phase": "Initializing...",
         "created_at": datetime.now().isoformat(),
-        "study_notes": game_request.study_notes
-    }
+        "study_notes": text[:12000]
+    })
+    _prune_history()
 
-    background_tasks.add_task(run_game_generation, task_id, game_request.study_notes)
+    background_tasks.add_task(run_game_generation, task_id, text)
 
     return {"task_id": task_id, "status": "queued"}
 
 @app.get("/api/status/{task_id}")
 async def get_status(task_id: str):
-    if task_id not in generation_status:
+    task = _get_task(task_id)
+    if not task:
         return JSONResponse({"error": "Task not found"}, status_code=404)
 
-    return generation_status[task_id]
+    return task
 
 @app.post("/api/launch/{task_id}")
 async def launch_game(task_id: str):
-    if task_id not in generation_status:
+    status = _get_task(task_id)
+    if not status:
         return JSONResponse({"error": "Task not found"}, status_code=404)
-
-    status = generation_status[task_id]
 
     if status.get("status") != "completed":
         return JSONResponse({"error": "Game not ready"}, status_code=400)
@@ -98,16 +145,17 @@ async def launch_game(task_id: str):
         return JSONResponse({"error": "Game file not found"}, status_code=404)
 
     try:
-        python_path = os.path.join(os.getcwd(), "venv", "bin", "python")
+        venv_python = os.path.join(os.getcwd(), "venv", "bin", "python")
+        python_path = venv_python if os.path.exists(venv_python) else sys.executable
         subprocess.Popen([python_path, game_file])
-        return {"message": "Game launched successfully"}
+        return {"message": "Game launched successfully", "python_path": python_path}
     except Exception as e:
         return JSONResponse({"error": f"Failed to launch game: {str(e)}"}, status_code=500)
 
 @app.get("/api/history")
 async def get_history():
     history = []
-    for task_id, data in generation_status.items():
+    for task_id, data in _task_items_snapshot():
         history.append({
             "task_id": task_id,
             "status": data.get("status"),

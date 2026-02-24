@@ -1,5 +1,6 @@
 import os
 from typing import Any, Dict, List
+from urllib.parse import unquote
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,6 +58,44 @@ app.add_middleware(
 async def root():
     return {"message": "Hello World"}
 
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "ok",
+        "service": "esrl-backend",
+        "game_engine_api_url": GAME_ENGINE_API_URL,
+    }
+
+
+def _document_id_candidates(document_id: str | None) -> List[str]:
+    raw = (document_id or "").strip()
+    if not raw:
+        return []
+
+    candidates: List[str] = []
+    for value in (raw, unquote(raw), unquote(unquote(raw))):
+        value = value.strip()
+        if value and value not in candidates:
+            candidates.append(value)
+    return candidates
+
+
+def _normalize_document_id(document_id: str | None) -> str | None:
+    candidates = _document_id_candidates(document_id)
+    if not candidates:
+        return None
+    return candidates[-1]
+
+
+def _resolve_document_id_with_chunks(document_id: str) -> tuple[str, List[Dict[str, Any]]]:
+    for candidate in _document_id_candidates(document_id):
+        chunks = get_chunks_for_document(candidate)
+        if chunks:
+            return candidate, chunks
+
+    raise HTTPException(status_code=404, detail=f"No chunks found for document_id: {document_id}")
+
 @app.post("/upload_pdf")
 async def upload_pdf(file: UploadFile = File(...)):
     path = await save_pdf(file)
@@ -111,14 +150,21 @@ async def upload_pdf(file: UploadFile = File(...)):
 
 @app.post("/rag")
 async def rag_query(payload: dict):
-    query = payload.get("query", "")
-    context = query_similar(query, top_k=8)
+    query = (payload.get("query") or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Missing query.")
+
+    requested_document_id = _normalize_document_id(payload.get("document_id"))
+    context = query_similar(query, top_k=8, document_id=requested_document_id)
     answer = generate_answer(query, context)
     images = []
     metadatas = (context.get("metadatas") or [[]])[0]
-    document_ids = [m.get("document_id") for m in metadatas if m]
-    if document_ids:
-        image_context = query_images_for_document(query, document_ids[0], limit=5)
+    resolved_document_id = requested_document_id or next(
+        (m.get("document_id") for m in metadatas if m and m.get("document_id")),
+        None
+    )
+    if resolved_document_id:
+        image_context = query_images_for_document(query, resolved_document_id, limit=5)
         image_docs = (image_context.get("documents") or [[]])[0]
         image_metas = (image_context.get("metadatas") or [[]])[0]
         for doc, meta in zip(image_docs, image_metas):
@@ -126,7 +172,7 @@ async def rag_query(payload: dict):
             context_snippet = ""
             page = meta.get("page")
             if page is not None:
-                page_context = get_text_for_page(document_ids[0], page, limit=1)
+                page_context = get_text_for_page(resolved_document_id, page, limit=1)
                 page_docs = page_context.get("documents") or []
                 page_docs = page_docs[0] if page_docs and isinstance(page_docs[0], list) else page_docs
                 if page_docs:
@@ -145,6 +191,7 @@ async def rag_query(payload: dict):
 @app.post("/chat")
 async def chat_query(payload: Dict[str, Any]):
     messages: List[Dict[str, Any]] = payload.get("messages") or []
+    document_id = _normalize_document_id(payload.get("document_id"))
     user_query = ""
 
     for message in reversed(messages):
@@ -156,52 +203,14 @@ async def chat_query(payload: Dict[str, Any]):
     if not user_query:
         raise HTTPException(status_code=400, detail="Missing user query in messages.")
 
-    return await rag_query({"query": user_query})
+    return await rag_query({"query": user_query, "document_id": document_id})
 
 
-@app.post("/notes")
-async def notes_query(payload: dict):
-    text = (payload.get("text") or "").strip()
-    if not text:
-        last_uploaded = get_last_uploaded()
-        if not last_uploaded:
-            raise HTTPException(status_code=400, detail="No text provided and no uploaded PDF found.")
+def _build_text_from_document(document_id: str, max_chars: int = 12000) -> str:
+    _resolved_document_id, chunks = _resolve_document_id_with_chunks(document_id)
 
-        pdf_path = last_uploaded.get("path")
-        if not pdf_path or not os.path.exists(pdf_path):
-            raise HTTPException(status_code=400, detail="Last uploaded PDF not found.")
-
-        full_text, _ = extract_text_from_pdf(pdf_path)
-        text = clean_text(full_text)
-    notes = generate_quick_notes(text)
-    return notes
-
-
-@app.post("/notes/summary")
-async def notes_summary(payload: dict):
-    text = (payload.get("text") or "").strip()
-    if not text:
-        last_uploaded = get_last_uploaded()
-        if not last_uploaded:
-            raise HTTPException(status_code=400, detail="No text provided and no uploaded PDF found.")
-
-        pdf_path = last_uploaded.get("path")
-        if not pdf_path or not os.path.exists(pdf_path):
-            raise HTTPException(status_code=400, detail="Last uploaded PDF not found.")
-
-        full_text, _ = extract_text_from_pdf(pdf_path)
-        text = clean_text(full_text)
-    return summarize_text_levels(text)
-
-
-def _build_study_notes_from_document(document_id: str) -> str:
-    chunks = get_chunks_for_document(document_id)
-    if not chunks:
-        raise HTTPException(status_code=404, detail=f"No chunks found for document_id: {document_id}")
-
-    combined = []
+    combined: List[str] = []
     total_chars = 0
-    max_chars = 12000
     for chunk in chunks:
         text = (chunk.get("text") or "").strip()
         if not text:
@@ -214,10 +223,59 @@ def _build_study_notes_from_document(document_id: str) -> str:
         combined.append(text)
         total_chars += len(text)
 
-    study_notes = "\n\n".join(combined).strip()
-    if not study_notes:
-        raise HTTPException(status_code=400, detail="Could not build study notes from document chunks.")
-    return study_notes
+    built_text = "\n\n".join(combined).strip()
+    if not built_text:
+        raise HTTPException(status_code=400, detail="Could not build text from document chunks.")
+    return built_text
+
+
+def _resolve_text_input(payload: dict, max_chars: int = 12000) -> str:
+    text = (payload.get("text") or "").strip()
+    if text:
+        return text
+
+    document_id = _normalize_document_id(payload.get("document_id")) or ""
+    if document_id:
+        return _build_text_from_document(document_id, max_chars=max_chars)
+
+    last_uploaded = get_last_uploaded()
+    if not last_uploaded:
+        raise HTTPException(status_code=400, detail="No text provided and no uploaded PDF found.")
+
+    pdf_path = last_uploaded.get("path")
+    if not pdf_path or not os.path.exists(pdf_path):
+        raise HTTPException(status_code=400, detail="Last uploaded PDF not found.")
+
+    full_text, _ = extract_text_from_pdf(pdf_path)
+    return clean_text(full_text)
+
+
+@app.post("/notes")
+async def notes_query(payload: dict):
+    text = _resolve_text_input(payload, max_chars=12000)
+    return generate_quick_notes(text)
+
+
+@app.post("/notes/summary")
+async def notes_summary(payload: dict):
+    text = _resolve_text_input(payload, max_chars=12000)
+    return summarize_text_levels(text)
+
+
+@app.get("/documents/last")
+async def get_last_document():
+    last_uploaded = get_last_uploaded()
+    if not last_uploaded:
+        raise HTTPException(status_code=404, detail="No uploaded PDF found.")
+    return {
+        "document_id": last_uploaded.get("document_id"),
+        "path": last_uploaded.get("path"),
+        "timestamp": last_uploaded.get("timestamp"),
+    }
+
+
+def _build_study_notes_from_document(document_id: str) -> str:
+    return _build_text_from_document(document_id, max_chars=12000)
 
 
 def _proxy_game_engine(method: str, path: str, payload: Dict[str, Any] | None = None):
@@ -242,10 +300,11 @@ def _proxy_game_engine(method: str, path: str, payload: Dict[str, Any] | None = 
 
 @app.post("/game/generate/{document_id}")
 async def generate_game(document_id: str):
-    study_notes = _build_study_notes_from_document(document_id)
+    normalized_document_id = _normalize_document_id(document_id) or document_id
+    study_notes = _build_study_notes_from_document(normalized_document_id)
     payload = {"study_notes": study_notes}
     result = _proxy_game_engine("POST", "/api/generate", payload)
-    return {"document_id": document_id, **result}
+    return {"document_id": normalized_document_id, **result}
 
 
 @app.get("/game/status/{task_id}")
@@ -260,16 +319,20 @@ async def game_launch(task_id: str):
 
 @app.post("/generate_video/{document_id}")
 async def generate_video(document_id: str):
-    text_chunks = get_chunks_for_document(document_id)
-    raw_images = get_images_for_document(document_id)
+    normalized_document_id = _normalize_document_id(document_id) or document_id
+    resolved_document_id, text_chunks = _resolve_document_id_with_chunks(normalized_document_id)
+    raw_images = get_images_for_document(resolved_document_id)
     image_chunks = normalize_chroma_images(raw_images)
 
     if not text_chunks:
         return {"error": "No text chunks found for document"}
 
-    slides = generate_slide_plan(text_chunks, image_chunks)
+    try:
+        slides = generate_slide_plan(text_chunks, image_chunks)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Slide generation failed: {exc}") from exc
 
     if not slides:
         return {"error": "Slide generation failed"}
 
-    return await generate_video_parallel(slides, image_chunks, document_id=document_id)
+    return await generate_video_parallel(slides, image_chunks, document_id=resolved_document_id)
