@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>eSRL Game Generator</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🎮 eSRL Game Generator</h1>
+            <p class="subtitle">Transform your study notes into interactive PyGame experiences</p>
+        </header>
+
+        <div class="main-content">
+            <div class="input-section" id="inputSection">
+                <h2>Paste Your Study Notes</h2>
+                <textarea
+                    id="studyNotes"
+                    placeholder="Enter your study notes here... (e.g., concepts about photosynthesis, data structures, physics laws, etc.)"
+                    rows="15"
+                ></textarea>
+
+                <button id="generateBtn" class="btn-primary" onclick="generateGame()">
+                    Generate Game
+                </button>
+
+                <div class="examples">
+                    <h3>Example Topics</h3>
+                    <div class="example-tags">
+                        <span class="tag" onclick="loadExample('photosynthesis')">Photosynthesis</span>
+                        <span class="tag" onclick="loadExample('stack')">Data Structures: Stack</span>
+                        <span class="tag" onclick="loadExample('newton')">Newton's Laws</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="progress-section hidden" id="progressSection">
+                <div class="progress-card">
+                    <h2>Generating Your Game...</h2>
+
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+
+                    <div class="phase-indicator">
+                        <div class="phase-step" id="phase1">
+                            <div class="phase-icon">🎨</div>
+                            <span>Game Design</span>
+                        </div>
+                        <div class="phase-step" id="phase2">
+                            <div class="phase-icon">📊</div>
+                            <span>Level Design</span>
+                        </div>
+                        <div class="phase-step" id="phase3">
+                            <div class="phase-icon">💻</div>
+                            <span>Code Generation</span>
+                        </div>
+                    </div>
+
+                    <p class="status-text" id="statusText">Initializing...</p>
+                </div>
+            </div>
+
+            <div class="result-section hidden" id="resultSection">
+                <div class="result-card">
+                    <h2>✅ Game Generated Successfully!</h2>
+
+                    <div class="result-actions">
+                        <button class="btn-launch" onclick="launchGame(event)">
+                            🚀 Launch Game
+                        </button>
+                        <button class="btn-secondary" onclick="resetForm()">
+                            Create Another Game
+                        </button>
+                    </div>
+
+                    <div class="result-details">
+                        <details>
+                            <summary>View Game Design</summary>
+                            <pre id="gameDesignContent"></pre>
+                        </details>
+
+                        <details>
+                            <summary>View Level Design</summary>
+                            <pre id="levelDesignContent"></pre>
+                        </details>
+
+                        <details>
+                            <summary>View Generated Code</summary>
+                            <pre id="codeContent"></pre>
+                        </details>
+                    </div>
+                </div>
+            </div>
+
+            <div class="error-section hidden" id="errorSection">
+                <div class="error-card">
+                    <h2>❌ Generation Failed</h2>
+                    <p id="errorMessage"></p>
+                    <button class="btn-secondary" onclick="resetForm()">Try Again</button>
+                </div>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <p>Built with FastAPI, Gemini AI, and PyGame</p>
+        </footer>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

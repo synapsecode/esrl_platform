@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+pydantic
+pymupdf
+python-multipart
+pytesseract
+pillow
+transformers
+sentence-transformers
+chromadb
+spacy
+google-genai
+requests
+streamlit
+pydub
+playwright
+#jnbwrikhfbnke

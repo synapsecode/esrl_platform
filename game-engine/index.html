@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>LIFO Logistics: The Stack Handler - Enhanced Edition</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.0/dist/phaser.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        #game-container {
+            position: relative;
+            width: 960px;
+            height: 640px;
+            margin: 20px auto;
+            background-color: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(138, 255, 138, 0.3);
+        }
+
+        #instructions-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.95) 0%, rgba(20, 20, 40, 0.95) 100%);
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            z-index: 1000;
+            padding: 40px;
+            box-sizing: border-box;
+        }
+
+        #instructions-overlay h1 {
+            color: #8aff8a;
+            margin-bottom: 20px;
+            font-size: 48px;
+            text-shadow: 0 0 20px rgba(138, 255, 138, 0.5);
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes glow {
+            from {
+                text-shadow: 0 0 20px rgba(138, 255, 138, 0.5);
+            }
+
+            to {
+                text-shadow: 0 0 30px rgba(138, 255, 138, 0.8), 0 0 40px rgba(138, 255, 138, 0.4);
+            }
+        }
+
+        #instructions-overlay p {
+            max-width: 700px;
+            margin-bottom: 15px;
+            line-height: 1.6;
+            font-size: 16px;
+        }
+
+        #instructions-overlay h3 {
+            color: #ffdd00;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        #instructions-overlay ul {
+            text-align: left;
+            margin-bottom: 20px;
+            padding-left: 20px;
+            max-width: 700px;
+        }
+
+        #instructions-overlay li {
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
+
+        #instructions-overlay strong {
+            color: #8aff8a;
+        }
+
+        #instructions-overlay button {
+            padding: 18px 40px;
+            font-size: 28px;
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.4);
+            font-weight: bold;
+            margin-top: 20px;
+        }
+
+        #instructions-overlay button:hover {
+            background: linear-gradient(135deg, #45a049 0%, #4CAF50 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 7px 20px rgba(76, 175, 80, 0.6);
+        }
+
+        #instructions-overlay button:active {
+            transform: translateY(0);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .feature-highlight {
+            background: rgba(138, 255, 138, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid #8aff8a;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="game-container">
+        <div id="instructions-overlay">
+            <h1>🎮 LIFO Logistics: The Stack Handler 🎮</h1>
+            <p>Welcome, Stack Handler! Master the art of LIFO (Last-In, First-Out) stack management by efficiently
+                handling incoming cargo and fulfilling orders under time pressure!</p>
+
+            <h3>📦 How to Play:</h3>
+            <ul>
+                <li><strong>PUSH:</strong> Drag crates from the <strong>Conveyor Belt (left)</strong> onto the
+                    <strong>LIFO Stack (center)</strong> to add them to the top.</li>
+                <li><strong>POP:</strong> Drag the <strong>TOPMOST crate only</strong> from the stack to the
+                    <strong>Fulfillment Zone (right)</strong> when it matches the current order.</li>
+                <li><strong>⚠️ LIFO Rule:</strong> You can ONLY remove the top crate! Trying to grab any other crate
+                    results in a violation penalty.</li>
+                <li><strong>🎯 Strategy:</strong> Plan ahead! Sometimes you need to push crates to access the one you
+                    need. Build combos for bonus points!</li>
+            </ul>
+
+            <div class="feature-highlight">
+                <h3>✨ New Features:</h3>
+                <ul>
+                    <li>🔥 <strong>Combo System:</strong> Fulfill orders quickly to build combos and earn multiplier
+                        bonuses!</li>
+                    <li>⭐ <strong>Perfect Clear Bonus:</strong> Empty the stack completely for extra points!</li>
+                    <li>🎨 <strong>Visual Effects:</strong> Particle explosions, smooth animations, and dynamic
+                        feedback!</li>
+                    <li>🎵 <strong>Audio Feedback:</strong> Sound effects for all actions (enable after starting)</li>
+                    <li>📊 <strong>Statistics Tracking:</strong> Monitor your accuracy and performance!</li>
+                </ul>
+            </div>
+
+            <p><strong>Controls:</strong> Use <strong>Left Mouse Button</strong> to drag and drop crates</p>
+            <button id="startGameButton">🚀 Start Game</button>
+        </div>
+    </div>
+
+    <script>
+        const config = {
+            type: Phaser.AUTO,
+            width: 960,
+            height: 640,
+            parent: 'game-container',
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            },
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    debug: false
+                }
+            }
+        };
+
+        let game;
+        document.getElementById('startGameButton').onclick = function () {
+            document.getElementById('instructions-overlay').classList.add('hidden');
+            game = new Phaser.Game(config);
+        };
+
+        // Game constants
+        const CRATE_WIDTH = 80;
+        const CRATE_HEIGHT = 60;
+        const STACK_MAX_HEIGHT = 8;
+        const STACK_X = config.width / 2;
+        const STACK_Y_BASE = config.height - 80;
+        const STACK_PLATFORM_HEIGHT = 30;
+
+        const CONVEYOR_ZONE_X = 130;
+        const CONVEYOR_ZONE_Y = STACK_Y_BASE - (CRATE_HEIGHT / 2);
+        const CONVEYOR_ZONE_WIDTH = 220;
+        const CONVEYOR_ZONE_HEIGHT = CRATE_HEIGHT * 2.5;
+
+        const FULFILLMENT_ZONE_X = config.width - 130;
+        const FULFILLMENT_ZONE_Y = STACK_Y_BASE - (CRATE_HEIGHT / 2);
+        const FULFILLMENT_ZONE_WIDTH = 220;
+        const FULFILLMENT_ZONE_HEIGHT = CRATE_HEIGHT * 2.5;
+
+        const CRATE_COLORS = [
+            { name: 'Red', hex: 0xff3333, light: 0xff6666 },
+            { name: 'Green', hex: 0x33ff33, light: 0x66ff66 },
+            { name: 'Blue', hex: 0x3333ff, light: 0x6666ff },
+            { name: 'Yellow', hex: 0xffdd00, light: 0xffee44 },
+            { name: 'Purple', hex: 0xaa33ff, light: 0xcc66ff },
+            { name: 'Cyan', hex: 0x00ddff, light: 0x44eeff },
+            { name: 'Orange', hex: 0xff8800, light: 0xffaa44 },
+            { name: 'Pink', hex: 0xff44aa, light: 0xff88cc }
+        ];
+
+        // Game state
+        let stack = [];
+        let currentCrateOnConveyor = null;
+        let currentOrder = null;
+        let score = 0;
+        let violations = 0;
+        let orderTimer = 0;
+        let orderExpiryPenalty = 1;
+        let gameTime = 0;
+        let gameOver = false;
+        let level = 1;
+        let orderGenerationEvent = null;
+        let combo = 0;
+        let maxCombo = 0;
+        let lastFulfillTime = 0;
+        let totalOrders = 0;
+        let successfulOrders = 0;
+        let perfectClears = 0;
+
+        // UI elements
+        let scoreText, violationsText, orderText, timerText, levelText;
+        let feedbackText, gameOverText, restartButton, gameTimerText;
+        let comboText, statsText, highScoreText;
+        let stackZone, conveyorZone, fulfillmentZone;
+        let particles, stackPlatformGlow, orderGlow;
+        let conveyorBelt, conveyorBeltLines;
+
+        // Audio context (Web Audio API for simple sound effects)
+        let audioContext;
+        let soundEnabled = false;
+
+        // Level parameters
+        const levelParams = {
+            1: { winOrders: 6, timeLimit: 90, maxViolations: 4, orderTimerMax: 12000, orderGenerateDelay: 5000 },
+            2: { winOrders: 10, timeLimit: 120, maxViolations: 5, orderTimerMax: 10000, orderGenerateDelay: 4000 },
+            3: { winOrders: 15, timeLimit: 150, maxViolations: 6, orderTimerMax: 8000, orderGenerateDelay: 3000 },
+            4: { winOrders: 20, timeLimit: 180, maxViolations: 7, orderTimerMax: 7000, orderGenerateDelay: 2500 }
+        };
+
+        function preload() {
+            // Create simple audio context
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                soundEnabled = true;
+            } catch (e) {
+                console.log('Web Audio API not supported');
+            }
+        }
+
+        function create() {
+            this.cameras.main.setBackgroundColor('#1a1a2e');
+
+            // Background particles
+            particles = this.add.particles(0, 0, 'particle', {
+                x: { min: 0, max: config.width },
+                y: { min: 0, max: config.height },
+                speed: 20,
+                angle: { min: 0, max: 360 },
+                scale: { start: 0.3, end: 0 },
+                alpha: { start: 0.3, end: 0 },
+                lifespan: 3000,
+                frequency: 500,
+                blendMode: 'ADD'
+            });
+
+            // Create particle texture
+            const graphics = this.make.graphics({ x: 0, y: 0, add: false });
+            graphics.fillStyle(0xffffff);
+            graphics.fillCircle(4, 4, 4);
+            graphics.generateTexture('particle', 8, 8);
+            graphics.destroy();
+
+            // Animated conveyor belt
+            conveyorBelt = this.add.graphics();
+            conveyorBelt.fillStyle(0x4a4a4a, 1);
+            conveyorBelt.fillRoundedRect(
+                CONVEYOR_ZONE_X - CONVEYOR_ZONE_WIDTH / 2,
+                CONVEYOR_ZONE_Y - CONVEYOR_ZONE_HEIGHT / 2,
+                CONVEYOR_ZONE_WIDTH,
+                CONVEYOR_ZONE_HEIGHT,
+                10
+            );
+            conveyorBelt.lineStyle(3, 0x6a6a6a, 1);
+            conveyorBelt.strokeRoundedRect(
+                CONVEYOR_ZONE_X - CONVEYOR_ZONE_WIDTH / 2,
+                CONVEYOR_ZONE_Y - CONVEYOR_ZONE_HEIGHT / 2,
+                CONVEYOR_ZONE_WIDTH,
+                CONVEYOR_ZONE_HEIGHT,
+                10
+            );
+
+            // Conveyor belt lines (animated)
+            conveyorBeltLines = [];
+            for (let i = 0; i < 5; i++) {
+                const line = this.add.rectangle(
+                    CONVEYOR_ZONE_X - CONVEYOR_ZONE_WIDTH / 2 + (i * 50),
+                    CONVEYOR_ZONE_Y,
+                    30,
+                    4,
+                    0x888888,
+                    0.5
+                );
+                conveyorBeltLines.push(line);
+            }
+
+            this.add.text(CONVEYOR_ZONE_X, CONVEYOR_ZONE_Y - CONVEYOR_ZONE_HEIGHT / 2 - 30, '📦 CONVEYOR', {
+                fontSize: '20px',
+                fill: '#8aff8a',
+                fontStyle: 'bold'
+            }).setOrigin(0.5);
+            conveyorZone = new Phaser.Geom.Rectangle(
+                CONVEYOR_ZONE_X - CONVEYOR_ZONE_WIDTH / 2,
+                CONVEYOR_ZONE_Y - CONVEYOR_ZONE_HEIGHT / 2,
+                CONVEYOR_ZONE_WIDTH,
+                CONVEYOR_ZONE_HEIGHT
+            );
+
+            // Stack platform with glow
+            stackPlatformGlow = this.add.rectangle(STACK_X, STACK_Y_BASE, CRATE_WIDTH + 60, STACK_PLATFORM_HEIGHT + 10, 0x8aff8a, 0.3);
+            stackPlatformGlow.setDepth(0);
+
+            this.add.rectangle(STACK_X, STACK_Y_BASE, CRATE_WIDTH + 50, STACK_PLATFORM_HEIGHT, 0x3a3a3a)
+                .setStrokeStyle(3, 0x8aff8a);
+
+            this.add.text(STACK_X, STACK_Y_BASE - STACK_PLATFORM_HEIGHT / 2 - 30, '📚 LIFO STACK', {
+                fontSize: '20px',
+                fill: '#8aff8a',
+                fontStyle: 'bold'
+            }).setOrigin(0.5);
+
+            stackZone = new Phaser.Geom.Rectangle(
+                STACK_X - (CRATE_WIDTH + 50) / 2,
+                STACK_Y_BASE - (CRATE_HEIGHT * (STACK_MAX_HEIGHT + 1)) - STACK_PLATFORM_HEIGHT,
+                CRATE_WIDTH + 50,
+                (CRATE_HEIGHT * (STACK_MAX_HEIGHT + 1)) + STACK_PLATFORM_HEIGHT
+            );
+
+            // Fulfillment zone with glow
+            const fulfillmentGraphics = this.add.graphics();
+            fulfillmentGraphics.fillStyle(0x4a4a4a, 1);
+            fulfillmentGraphics.fillRoundedRect(
+                FULFILLMENT_ZONE_X - FULFILLMENT_ZONE_WIDTH / 2,
+                FULFILLMENT_ZONE_Y - FULFILLMENT_ZONE_HEIGHT / 2,
+                FULFILLMENT_ZONE_WIDTH,
+                FULFILLMENT_ZONE_HEIGHT,
+                10
+            );
+            fulfillmentGraphics.lineStyle(3, 0xffdd00, 1);
+            fulfillmentGraphics.strokeRoundedRect(
+                FULFILLMENT_ZONE_X - FULFILLMENT_ZONE_WIDTH / 2,
+                FULFILLMENT_ZONE_Y - FULFILLMENT_ZONE_HEIGHT / 2,
+                FULFILLMENT_ZONE_WIDTH,
+                FULFILLMENT_ZONE_HEIGHT,
+                10
+            );
+
+            orderGlow = this.add.rectangle(
+                FULFILLMENT_ZONE_X,
+                FULFILLMENT_ZONE_Y,
+                FULFILLMENT_ZONE_WIDTH + 10,
+                FULFILLMENT_ZONE_HEIGHT + 10,
+                0xffdd00,
+                0
+            ).setDepth(-1);
+
+            this.add.text(FULFILLMENT_ZONE_X, FULFILLMENT_ZONE_Y - FULFILLMENT_ZONE_HEIGHT / 2 - 30, '🎯 FULFILLMENT', {
+                fontSize: '20px',
+                fill: '#ffdd00',
+                fontStyle: 'bold'
+            }).setOrigin(0.5);
+
+            fulfillmentZone = new Phaser.Geom.Rectangle(
+                FULFILLMENT_ZONE_X - FULFILLMENT_ZONE_WIDTH / 2,
+                FULFILLMENT_ZONE_Y - FULFILLMENT_ZONE_HEIGHT / 2,
+                FULFILLMENT_ZONE_WIDTH,
+                FULFILLMENT_ZONE_HEIGHT
+            );
+
+            // UI toolbar
+            const toolbarGraphics = this.add.graphics();
+            toolbarGraphics.fillStyle(0x2a2a3e, 0.95);
+            toolbarGraphics.fillRect(0, 0, config.width, 120);
+            toolbarGraphics.lineStyle(2, 0x8aff8a, 0.5);
+            toolbarGraphics.lineBetween(0, 120, config.width, 120);
+
+            // Left column
+            levelText = this.add.text(20, 15, 'LEVEL 1', {
+                fontSize: '24px',
+                fill: '#8aff8a',
+                fontStyle: 'bold'
+            });
+            scoreText = this.add.text(20, 45, 'Score: 0', {
+                fontSize: '20px',
+                fill: '#ffffff'
+            });
+            violationsText = this.add.text(20, 70, 'Violations: 0/4', {
+                fontSize: '18px',
+                fill: '#ff6666'
+            });
+            gameTimerText = this.add.text(20, 95, 'Time: 90s', {
+                fontSize: '18px',
+                fill: '#ffdd00'
+            });
+
+            // Center - Order display
+            orderText = this.add.text(config.width / 2, 40, 'Order: Waiting...', {
+                fontSize: '28px',
+                fill: '#fff',
+                fontStyle: 'bold',
+                backgroundColor: '#444444',
+                padding: { x: 15, y: 8 }
+            }).setOrigin(0.5);
+
+            timerText = this.add.text(config.width / 2, 80, 'Time: 0s', {
+                fontSize: '22px',
+                fill: '#ffdd00'
+            }).setOrigin(0.5);
+
+            // Right column
+            comboText = this.add.text(config.width - 20, 15, 'COMBO: 0x', {
+                fontSize: '24px',
+                fill: '#ff88ff',
+                fontStyle: 'bold'
+            }).setOrigin(1, 0);
+
+            statsText = this.add.text(config.width - 20, 45, 'Accuracy: 100%', {
+                fontSize: '18px',
+                fill: '#ffffff'
+            }).setOrigin(1, 0);
+
+            highScoreText = this.add.text(config.width - 20, 70, 'Best Combo: 0x', {
+                fontSize: '18px',
+                fill: '#ffaa44'
+            }).setOrigin(1, 0);
+
+            // Feedback text
+            feedbackText = this.add.text(config.width / 2, config.height / 2 - 100, '', {
+                fontSize: '48px',
+                fill: '#ffffff',
+                fontStyle: 'bold',
+                stroke: '#000000',
+                strokeThickness: 6
+            }).setOrigin(0.5).setDepth(1000);
+            feedbackText.setVisible(false);
+
+            // Game over screen
+            gameOverText = this.add.text(config.width / 2, config.height / 2 - 80, '', {
+                fontSize: '52px',
+                fill: '#ffffff',
+                backgroundColor: '#000000aa',
+                padding: { x: 30, y: 15 },
+                fontStyle: 'bold'
+            }).setOrigin(0.5).setDepth(1000);
+            gameOverText.setVisible(false);
+
+            restartButton = this.add.text(config.width / 2, config.height / 2 + 60, '🔄 Restart Game', {
+                fontSize: '32px',
+                fill: '#4CAF50',
+                backgroundColor: '#000000dd',
+                padding: { x: 25, y: 12 },
+                fontStyle: 'bold'
+            }).setOrigin(0.5).setDepth(1000);
+            restartButton.setInteractive({ useHandCursor: true });
+            restartButton.on('pointerdown', () => this.scene.restart());
+            restartButton.on('pointerover', () => restartButton.setScale(1.1));
+            restartButton.on('pointerout', () => restartButton.setScale(1));
+            restartButton.setVisible(false);
+
+            // Drag and drop handlers
+            this.input.on('dragstart', (pointer, gameObject) => {
+                if (gameOver) return;
+                gameObject.setData('startX', gameObject.x);
+                gameObject.setData('startY', gameObject.y);
+                this.children.bringToTop(gameObject);
+                gameObject.setScale(1.1);
+                playSound('grab', 200, 0.1);
+            });
+
+            this.input.on('drag', (pointer, gameObject, dragX, dragY) => {
+                if (gameOver) return;
+                gameObject.x = dragX;
+                gameObject.y = dragY;
+            });
+
+            this.input.on('dragend', (pointer, gameObject) => {
+                if (gameOver) return;
+                gameObject.setScale(1);
+                const startX = gameObject.getData('startX');
+                const startY = gameObject.getData('startY');
+                const crateRect = new Phaser.Geom.Rectangle(
+                    gameObject.x - CRATE_WIDTH / 2,
+                    gameObject.y - CRATE_HEIGHT / 2,
+                    CRATE_WIDTH,
+                    CRATE_HEIGHT
+                );
+
+                if (Phaser.Geom.Intersects.RectangleToRectangle(crateRect, stackZone)) {
+                    if (gameObject === currentCrateOnConveyor) {
+                        // Push operation
+                        stack.push(gameObject);
+                        currentCrateOnConveyor = null;
+                        this.generateCrate();
+                        this.updateStackVisuals();
+                        this.showFeedback('PUSHED! 📦', '#00ff00');
+                        playSound('push', 300, 0.15);
+                        this.createParticles(gameObject.x, gameObject.y, gameObject.getData('colorHex'));
+                    } else if (stack.includes(gameObject)) {
+                        this.updateStackVisuals();
+                    } else {
+                        gameObject.x = startX;
+                        gameObject.y = startY;
+                    }
+                } else if (Phaser.Geom.Intersects.RectangleToRectangle(crateRect, fulfillmentZone)) {
+                    if (stack.length > 0 && gameObject === stack[stack.length - 1]) {
+                        // Valid pop
+                        const poppedCrate = stack.pop();
+                        const wasStackEmpty = stack.length === 0;
+                        this.fulfillOrder(poppedCrate.getData('colorName'), wasStackEmpty);
+                        this.createExplosion(gameObject.x, gameObject.y, poppedCrate.getData('colorHex'));
+                        poppedCrate.destroy();
+                        this.updateStackVisuals();
+                    } else if (stack.includes(gameObject)) {
+                        // LIFO Violation
+                        violations++;
+                        violationsText.setText('Violations: ' + violations + '/' + levelParams[level].maxViolations);
+                        gameObject.x = startX;
+                        gameObject.y = startY;
+                        this.showFeedback('⚠️ VIOLATION!', '#ff0000');
+                        this.cameras.main.shake(200, 0.005);
+                        this.cameras.main.flash(300, 255, 0, 0);
+                        playSound('violation', 150, 0.2);
+                        combo = 0;
+                        comboText.setText('COMBO: 0x');
+                    } else {
+                        gameObject.x = startX;
+                        gameObject.y = startY;
+                    }
+                } else {
+                    gameObject.x = startX;
+                    gameObject.y = startY;
+                    playSound('drop', 200, 0.1);
+                }
+            });
+
+            // Animate conveyor belt and glows
+            this.tweens.add({
+                targets: conveyorBeltLines,
+                x: '+=50',
+                duration: 2000,
+                repeat: -1,
+                onRepeat: () => {
+                    conveyorBeltLines.forEach((line, i) => {
+                        if (line.x > CONVEYOR_ZONE_X + CONVEYOR_ZONE_WIDTH / 2) {
+                            line.x = CONVEYOR_ZONE_X - CONVEYOR_ZONE_WIDTH / 2;
+                        }
+                    });
+                }
+            });
+
+            this.tweens.add({
+                targets: stackPlatformGlow,
+                alpha: 0.1,
+                duration: 1000,
+                yoyo: true,
+                repeat: -1
+            });
+
+            this.startLevel(1);
+        }
+
+        function update(time, delta) {
+            if (gameOver) return;
+
+            gameTime += delta;
+            orderTimer -= delta;
+
+            const timeLeft = Math.max(0, Math.ceil((levelParams[level].timeLimit * 1000 - gameTime) / 1000));
+            gameTimerText.setText('Time: ' + timeLeft + 's');
+
+            if (currentOrder) {
+                const orderTimeLeft = Math.max(0, Math.ceil(orderTimer / 1000));
+                timerText.setText('⏱️ ' + orderTimeLeft + 's');
+
+                // Pulse order glow
+                const glowAlpha = orderTimer < 3000 ? 0.3 : (orderTimer < 6000 ? 0.2 : 0.1);
+                orderGlow.setAlpha(glowAlpha + Math.sin(time / 200) * 0.1);
+
+                if (orderTimer < 3000) {
+                    orderText.setColor('#ff0000');
+                    timerText.setColor('#ff0000');
+                } else if (orderTimer < 6000) {
+                    orderText.setColor('#ffff00');
+                    timerText.setColor('#ffff00');
+                } else {
+                    orderText.setColor('#fff');
+                    timerText.setColor('#ffdd00');
+                }
+
+                if (orderTimer <= 0) {
+                    violations += orderExpiryPenalty;
+                    violationsText.setText('Violations: ' + violations + '/' + levelParams[level].maxViolations);
+                    this.showFeedback('⏰ EXPIRED!', '#ff8800');
+                    playSound('expire', 150, 0.15);
+                    currentOrder = null;
+                    combo = 0;
+                    comboText.setText('COMBO: 0x');
+                    this.generateOrder();
+                }
+            }
+
+            if (score >= levelParams[level].winOrders) {
+                this.winLevel();
+            } else if (violations >= levelParams[level].maxViolations) {
+                this.loseGame('Too many violations!');
+            } else if (gameTime >= (levelParams[level].timeLimit * 1000)) {
+                this.loseGame('Time expired!');
+            }
+        }
+
+        function startLevel(levelNum) {
+            level = levelNum;
+            score = 0;
+            violations = 0;
+            gameTime = 0;
+            gameOver = false;
+            currentOrder = null;
+            combo = 0;
+            totalOrders = 0;
+            successfulOrders = 0;
+
+            levelText.setText('LEVEL ' + level);
+            scoreText.setText('Score: 0');
+            violationsText.setText('Violations: 0/' + levelParams[level].maxViolations);
+            comboText.setText('COMBO: 0x');
+            statsText.setText('Accuracy: 100%');
+            gameOverText.setVisible(false);
+            restartButton.setVisible(false);
+
+            stack.forEach(crate => crate.destroy());
+            stack = [];
+            if (currentCrateOnConveyor) {
+                currentCrateOnConveyor.destroy();
+                currentCrateOnConveyor = null;
+            }
+
+            orderTimer = levelParams[level].orderTimerMax;
+
+            this.generateCrate();
+            this.generateOrder();
+            this.updateStackVisuals();
+
+            if (orderGenerationEvent) {
+                orderGenerationEvent.destroy();
+            }
+            orderGenerationEvent = this.time.addEvent({
+                delay: levelParams[level].orderGenerateDelay,
+                callback: this.generateOrder,
+                callbackScope: this,
+                loop: true
+            });
+        }
+
+        function generateCrate() {
+            if (currentCrateOnConveyor) return;
+
+            const randomColor = Phaser.Math.RND.pick(CRATE_COLORS);
+
+            const crateGraphics = this.add.graphics();
+
+            // Gradient effect
+            crateGraphics.fillGradientStyle(randomColor.light, randomColor.light, randomColor.hex, randomColor.hex, 1);
+            crateGraphics.fillRoundedRect(-CRATE_WIDTH / 2, -CRATE_HEIGHT / 2, CRATE_WIDTH, CRATE_HEIGHT, 5);
+            crateGraphics.lineStyle(3, 0x000000, 1);
+            crateGraphics.strokeRoundedRect(-CRATE_WIDTH / 2, -CRATE_HEIGHT / 2, CRATE_WIDTH, CRATE_HEIGHT, 5);
+
+            // Shine effect
+            crateGraphics.fillStyle(0xffffff, 0.3);
+            crateGraphics.fillRoundedRect(-CRATE_WIDTH / 2 + 5, -CRATE_HEIGHT / 2 + 5, 30, 15, 3);
+
+            const crateLabel = this.add.text(0, 0, randomColor.name, {
+                fontSize: '16px',
+                fill: '#000',
+                fontStyle: 'bold',
+                stroke: '#fff',
+                strokeThickness: 2
+            }).setOrigin(0.5);
+
+            const crateContainer = this.add.container(
+                CONVEYOR_ZONE_X - CONVEYOR_ZONE_WIDTH / 3,
+                CONVEYOR_ZONE_Y,
+                [crateGraphics, crateLabel]
+            );
+            crateContainer.setSize(CRATE_WIDTH, CRATE_HEIGHT);
+            crateContainer.setInteractive({ draggable: true });
+            crateContainer.setData('colorName', randomColor.name);
+            crateContainer.setData('colorHex', randomColor.hex);
+            crateContainer.setDepth(10);
+
+            // Entrance animation
+            crateContainer.setAlpha(0);
+            crateContainer.setScale(0.5);
+            this.tweens.add({
+                targets: crateContainer,
+                alpha: 1,
+                scale: 1,
+                duration: 300,
+                ease: 'Back.easeOut'
+            });
+
+            currentCrateOnConveyor = crateContainer;
+        }
+
+        function generateOrder() {
+            const possibleColors = stack.map(crate => crate.getData('colorName'));
+            if (currentCrateOnConveyor) {
+                possibleColors.push(currentCrateOnConveyor.getData('colorName'));
+            }
+
+            let randomColor;
+            if (possibleColors.length > 0 && level > 1) {
+                randomColor = Phaser.Math.RND.pick(CRATE_COLORS);
+                if (Phaser.Math.RND.realInRange(0, 1) > 0.4) {
+                    const existingColor = Phaser.Math.RND.pick(possibleColors);
+                    randomColor = CRATE_COLORS.find(c => c.name === existingColor) || randomColor;
+                }
+            } else {
+                randomColor = Phaser.Math.RND.pick(CRATE_COLORS);
+            }
+
+            currentOrder = randomColor;
+            totalOrders++;
+            orderText.setText('🎯 Order: ' + currentOrder.name + ' Crate');
+            orderText.setBackgroundColor('#' + currentOrder.hex.toString(16).padStart(6, '0'));
+            orderTimer = levelParams[level].orderTimerMax;
+            orderText.setColor('#fff');
+            timerText.setColor('#ffdd00');
+
+            playSound('order', 400, 0.1);
+        }
+
+        function fulfillOrder(crateColorName, wasStackEmpty) {
+            if (currentOrder && crateColorName === currentOrder.name) {
+                const currentTime = Date.now();
+                const timeSinceLastFulfill = currentTime - lastFulfillTime;
+
+                // Combo system
+                if (timeSinceLastFulfill < 3000) {
+                    combo++;
+                } else {
+                    combo = 1;
+                }
+
+                lastFulfillTime = currentTime;
+                maxCombo = Math.max(maxCombo, combo);
+
+                const comboBonus = Math.floor((combo - 1) * 50);
+                const baseScore = 100;
+                const perfectClearBonus = wasStackEmpty ? 200 : 0;
+                const totalPoints = baseScore + comboBonus + perfectClearBonus;
+
+                score += totalPoints;
+                successfulOrders++;
+
+                scoreText.setText('Score: ' + score);
+                comboText.setText('COMBO: ' + combo + 'x');
+                highScoreText.setText('Best Combo: ' + maxCombo + 'x');
+
+                const accuracy = Math.round((successfulOrders / totalOrders) * 100);
+                statsText.setText('Accuracy: ' + accuracy + '%');
+
+                let feedbackMsg = '✓ FULFILLED!';
+                if (perfectClearBonus > 0) {
+                    feedbackMsg += ' 🌟 PERFECT CLEAR!';
+                    perfectClears++;
+                }
+                if (combo > 1) {
+                    feedbackMsg += ' ' + combo + 'x COMBO!';
+                }
+
+                this.showFeedback(feedbackMsg, '#00ffff');
+                playSound('success', 600, 0.2);
+
+                currentOrder = null;
+                return true;
+            }
+            return false;
+        }
+
+        function updateStackVisuals() {
+            const stackHeight = stack.length;
+            for (let i = 0; i < stackHeight; i++) {
+                const crate = stack[i];
+                const targetY = STACK_Y_BASE - (i * CRATE_HEIGHT) - (CRATE_HEIGHT / 2) - STACK_PLATFORM_HEIGHT / 2;
+                const targetX = STACK_X;
+
+                this.tweens.add({
+                    targets: crate,
+                    x: targetX,
+                    y: targetY,
+                    duration: 250,
+                    ease: 'Cubic.easeOut'
+                });
+            }
+        }
+
+        function showFeedback(message, color = '#ffffff') {
+            feedbackText.setText(message);
+            feedbackText.setColor(color);
+            feedbackText.setAlpha(0);
+            feedbackText.setScale(0.5);
+            feedbackText.setVisible(true);
+
+            this.tweens.add({
+                targets: feedbackText,
+                alpha: 1,
+                scale: 1,
+                duration: 200,
+                ease: 'Back.easeOut',
+                onComplete: () => {
+                    this.time.delayedCall(1200, () => {
+                        this.tweens.add({
+                            targets: feedbackText,
+                            alpha: 0,
+                            scale: 0.5,
+                            duration: 200,
+                            onComplete: () => feedbackText.setVisible(false)
+                        });
+                    });
+                }
+            });
+        }
+
+        function createParticles(x, y, color) {
+            for (let i = 0; i < 8; i++) {
+                const particle = this.add.circle(x, y, 3, color).setDepth(100);
+                const angle = (Math.PI * 2 / 8) * i;
+                this.tweens.add({
+                    targets: particle,
+                    x: x + Math.cos(angle) * 40,
+                    y: y + Math.sin(angle) * 40,
+                    alpha: 0,
+                    duration: 500,
+                    onComplete: () => particle.destroy()
+                });
+            }
+        }
+
+        function createExplosion(x, y, color) {
+            for (let i = 0; i < 15; i++) {
+                const particle = this.add.circle(x, y, Phaser.Math.Between(2, 5), color).setDepth(100);
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Phaser.Math.Between(50, 150);
+                this.tweens.add({
+                    targets: particle,
+                    x: x + Math.cos(angle) * speed,
+                    y: y + Math.sin(angle) * speed,
+                    alpha: 0,
+                    scale: 0,
+                    duration: 800,
+                    ease: 'Cubic.easeOut',
+                    onComplete: () => particle.destroy()
+                });
+            }
+        }
+
+        function winLevel() {
+            gameOver = true;
+            if (orderGenerationEvent) {
+                orderGenerationEvent.destroy();
+            }
+
+            const finalStats = `\nScore: ${score} | Accuracy: ${Math.round((successfulOrders / totalOrders) * 100)}%\nMax Combo: ${maxCombo}x | Perfect Clears: ${perfectClears}`;
+
+            if (level < Object.keys(levelParams).length) {
+                gameOverText.setText(`🎉 Level ${level} Complete! 🎉${finalStats}\n\nNext Level Starting...`);
+                gameOverText.setColor('#00ff00');
+                gameOverText.setVisible(true);
+                playSound('win', 800, 0.25);
+                this.cameras.main.flash(500, 0, 255, 0);
+                this.time.delayedCall(4000, () => {
+                    this.startLevel(level + 1);
+                });
+            } else {
+                gameOverText.setText(`🏆 ALL LEVELS COMPLETE! 🏆${finalStats}\n\nYou're a LIFO Master!`);
+                gameOverText.setColor('#ffdd00');
+                gameOverText.setVisible(true);
+                restartButton.setText('🔄 Play Again');
+                restartButton.setVisible(true);
+                playSound('win', 1000, 0.3);
+            }
+        }
+
+        function loseGame(reason) {
+            gameOver = true;
+            if (orderGenerationEvent) {
+                orderGenerationEvent.destroy();
+            }
+
+            const finalStats = `\nFinal Score: ${score}\nAccuracy: ${Math.round((successfulOrders / totalOrders) * 100)}%\nMax Combo: ${maxCombo}x`;
+
+            gameOverText.setText(`💥 Game Over! 💥\n${reason}${finalStats}`);
+            gameOverText.setColor('#ff0000');
+            gameOverText.setVisible(true);
+            restartButton.setVisible(true);
+            playSound('lose', 150, 0.2);
+            this.cameras.main.shake(500, 0.01);
+        }
+
+        // Simple Web Audio API sounds
+        function playSound(type, frequency, duration) {
+            if (!soundEnabled || !audioContext) return;
+
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.frequency.value = frequency;
+            gainNode.gain.value = 0.1;
+
+            const now = audioContext.currentTime;
+            gainNode.gain.setValueAtTime(0.1, now);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, now + duration);
+
+            oscillator.start(now);
+            oscillator.stop(now + duration);
+        }
+    </script>
+</body>
+
+</html>
