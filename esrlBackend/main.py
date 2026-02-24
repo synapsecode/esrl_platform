@@ -27,7 +27,11 @@ from app.services.image_service import generate_caption, extract_text
 from app.services.rag_service import generate_answer
 from app.services.notes_service import generate_quick_notes
 from app.services.summarizer_service import summarize_text_levels
-from app.services.video_gen_service import generate_slide_plan, generate_voice, get_audio_duration, html_to_video, image_audio_to_video, normalize_chroma_images, render_slide_html, stitch_videos
+from app.services.video_gen_service import (
+    generate_slide_plan,
+    generate_video_parallel,
+    normalize_chroma_images,
+)
 import requests
 from dotenv import load_dotenv
 load_dotenv()
@@ -256,63 +260,16 @@ async def game_launch(task_id: str):
 
 @app.post("/generate_video/{document_id}")
 async def generate_video(document_id: str):
-
     text_chunks = get_chunks_for_document(document_id)
     raw_images = get_images_for_document(document_id)
     image_chunks = normalize_chroma_images(raw_images)
-
 
     if not text_chunks:
         return {"error": "No text chunks found for document"}
 
     slides = generate_slide_plan(text_chunks, image_chunks)
 
-    # print(slides)
-
     if not slides:
         return {"error": "Slide generation failed"}
 
-    video_paths = []
-    slide_errors = []
-
-    for i, slide in enumerate(slides):
-        print(f"Generating slide {i+1}/{len(slides)}")
-        try:
-            voice_text = slide.get("voiceover") or slide.get("explanation")
-            if not voice_text:
-                slide_errors.append({"slide": i, "error": "Missing voice text"})
-                continue
-
-            audio_path = generate_voice(voice_text, i)
-            print(audio_path)
-            duration = get_audio_duration(audio_path)
-
-            html_path = render_slide_html(
-                slide,
-                duration=5,
-                slide_id=i,
-                all_images=image_chunks
-            )
-
-            webm_path = await html_to_video(html_path, i, duration)
-            print("WEBM EXISTS:", os.path.exists(webm_path))
-            print("AUDIO EXISTS:", os.path.exists(audio_path))
-            video_path = image_audio_to_video(webm_path, audio_path, duration, i)
-            video_paths.append(video_path)
-        except Exception as exc:
-            slide_errors.append({"slide": i, "error": str(exc)})
-            print(f"Slide {i} failed: {exc}")
-            continue
-
-    if not video_paths:
-        return {"error": "Video generation failed", "slide_errors": slide_errors}
-
-    final_video = stitch_videos(video_paths)
-
-    return {
-        "message": "Video generated successfully",
-        "video_path": final_video,
-        "slides_generated": len(video_paths),
-        "slides_requested": len(slides),
-        "slide_errors": slide_errors
-    }
+    return await generate_video_parallel(slides, image_chunks, document_id=document_id)
