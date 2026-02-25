@@ -28,9 +28,10 @@ The startup script aligns service URLs by exporting:
 
 Backend supports configurable concurrency:
 
-- `VIDEO_TTS_MAX_CONCURRENCY` (default `5`)
-- `VIDEO_RENDER_MAX_CONCURRENCY` (default `3`)
-- `VIDEO_FFMPEG_MAX_CONCURRENCY` (default `3`)
+- `VIDEO_TTS_MAX_CONCURRENCY` (default up to all slides; typically `7`)
+- `VIDEO_RENDER_MAX_CONCURRENCY` (default up to all slides; typically `7`)
+- `VIDEO_FFMPEG_MAX_CONCURRENCY` (default based on CPU; typically `4`)
+- `UPLOAD_IMAGE_MAX_CONCURRENCY` (default `4`)
 
 Generated artifacts are isolated per run under:
 

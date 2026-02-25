@@ -1,3 +1,4 @@
+import asyncio
 import os
 from typing import Any, Dict, List
 from urllib.parse import unquote
@@ -96,12 +97,60 @@ def _resolve_document_id_with_chunks(document_id: str) -> tuple[str, List[Dict[s
 
     raise HTTPException(status_code=404, detail=f"No chunks found for document_id: {document_id}")
 
+
+def _safe_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        value = int(raw)
+        return max(1, value)
+    except ValueError:
+        return default
+
+
+def _enrich_single_image(image: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        caption = generate_caption(image["path"])
+    except Exception:
+        caption = "Image"
+
+    try:
+        ocr_text = extract_text(image["path"])
+    except Exception:
+        ocr_text = ""
+
+    if ocr_text:
+        ocr_snippet = ocr_text[:400]
+        caption = f"{caption}. OCR: {ocr_snippet}"
+
+    return {
+        "id": image["id"],
+        "caption": caption,
+        "ocr": ocr_text,
+        "page": image.get("page"),
+        "document_id": image.get("document_id"),
+        "path": image.get("path"),
+    }
+
+
+async def _enrich_images_parallel(images: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not images:
+        return []
+
+    max_concurrency = min(len(images), _safe_int_env("UPLOAD_IMAGE_MAX_CONCURRENCY", 4))
+    semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def _worker(image: Dict[str, Any]) -> Dict[str, Any]:
+        async with semaphore:
+            return await asyncio.to_thread(_enrich_single_image, image)
+
+    return await asyncio.gather(*[_worker(image) for image in images])
+
 @app.post("/upload_pdf")
 async def upload_pdf(file: UploadFile = File(...)):
     path = await save_pdf(file)
 
     document_id = generate_document_id(path)
-    full_text, pages_text = extract_text_from_pdf(path)
+    full_text, pages_text = await asyncio.to_thread(extract_text_from_pdf, path)
     cleaned = clean_text(full_text)
     sections = structure_pages(pages_text)
     sections = classify_discourse(sections)
@@ -109,33 +158,13 @@ async def upload_pdf(file: UploadFile = File(...)):
     for section in sections:
         section["document_id"] = document_id
 
-    chunks = chunk_sections(sections, document_id)
-    upsert_chunks(chunks)
+    chunks = await asyncio.to_thread(chunk_sections, sections, document_id)
+    await asyncio.to_thread(upsert_chunks, chunks)
 
-    images = extract_images_from_pdf(path, document_id)
+    images = await asyncio.to_thread(extract_images_from_pdf, path, document_id)
     if images:
-        image_chunks = []
-        for image in images:
-            try:
-                caption = generate_caption(image["path"])
-            except Exception:
-                caption = "Image"
-            try:
-                ocr_text = extract_text(image["path"])
-            except Exception:
-                ocr_text = ""
-            if ocr_text:
-                ocr_snippet = ocr_text[:400]
-                caption = f"{caption}. OCR: {ocr_snippet}"
-            image_chunks.append({
-                "id": image["id"],
-                "caption": caption,
-                "ocr": ocr_text,
-                "page": image.get("page"),
-                "document_id": image.get("document_id"),
-                "path": image.get("path")
-            })
-        upsert_images(image_chunks)
+        image_chunks = await _enrich_images_parallel(images)
+        await asyncio.to_thread(upsert_images, image_chunks)
 
     record_last_uploaded(path, document_id)
 
@@ -155,8 +184,8 @@ async def rag_query(payload: dict):
         raise HTTPException(status_code=400, detail="Missing query.")
 
     requested_document_id = _normalize_document_id(payload.get("document_id"))
-    context = query_similar(query, top_k=8, document_id=requested_document_id)
-    answer = generate_answer(query, context)
+    context = await asyncio.to_thread(query_similar, query, 8, requested_document_id)
+    answer = await asyncio.to_thread(generate_answer, query, context)
     images = []
     metadatas = (context.get("metadatas") or [[]])[0]
     resolved_document_id = requested_document_id or next(
@@ -164,7 +193,7 @@ async def rag_query(payload: dict):
         None
     )
     if resolved_document_id:
-        image_context = query_images_for_document(query, resolved_document_id, limit=5)
+        image_context = await asyncio.to_thread(query_images_for_document, query, resolved_document_id, 5)
         image_docs = (image_context.get("documents") or [[]])[0]
         image_metas = (image_context.get("metadatas") or [[]])[0]
         for doc, meta in zip(image_docs, image_metas):
@@ -172,7 +201,7 @@ async def rag_query(payload: dict):
             context_snippet = ""
             page = meta.get("page")
             if page is not None:
-                page_context = get_text_for_page(resolved_document_id, page, limit=1)
+                page_context = await asyncio.to_thread(get_text_for_page, resolved_document_id, page, 1)
                 page_docs = page_context.get("documents") or []
                 page_docs = page_docs[0] if page_docs and isinstance(page_docs[0], list) else page_docs
                 if page_docs:
@@ -252,14 +281,14 @@ def _resolve_text_input(payload: dict, max_chars: int = 12000) -> str:
 
 @app.post("/notes")
 async def notes_query(payload: dict):
-    text = _resolve_text_input(payload, max_chars=12000)
-    return generate_quick_notes(text)
+    text = await asyncio.to_thread(_resolve_text_input, payload, 12000)
+    return await asyncio.to_thread(generate_quick_notes, text)
 
 
 @app.post("/notes/summary")
 async def notes_summary(payload: dict):
-    text = _resolve_text_input(payload, max_chars=12000)
-    return summarize_text_levels(text)
+    text = await asyncio.to_thread(_resolve_text_input, payload, 12000)
+    return await asyncio.to_thread(summarize_text_levels, text)
 
 
 @app.get("/documents/last")
@@ -301,34 +330,34 @@ def _proxy_game_engine(method: str, path: str, payload: Dict[str, Any] | None = 
 @app.post("/game/generate/{document_id}")
 async def generate_game(document_id: str):
     normalized_document_id = _normalize_document_id(document_id) or document_id
-    study_notes = _build_study_notes_from_document(normalized_document_id)
+    study_notes = await asyncio.to_thread(_build_study_notes_from_document, normalized_document_id)
     payload = {"study_notes": study_notes}
-    result = _proxy_game_engine("POST", "/api/generate", payload)
+    result = await asyncio.to_thread(_proxy_game_engine, "POST", "/api/generate", payload)
     return {"document_id": normalized_document_id, **result}
 
 
 @app.get("/game/status/{task_id}")
 async def game_status(task_id: str):
-    return _proxy_game_engine("GET", f"/api/status/{task_id}")
+    return await asyncio.to_thread(_proxy_game_engine, "GET", f"/api/status/{task_id}")
 
 
 @app.post("/game/launch/{task_id}")
 async def game_launch(task_id: str):
-    return _proxy_game_engine("POST", f"/api/launch/{task_id}")
+    return await asyncio.to_thread(_proxy_game_engine, "POST", f"/api/launch/{task_id}")
 
 
 @app.post("/generate_video/{document_id}")
 async def generate_video(document_id: str):
     normalized_document_id = _normalize_document_id(document_id) or document_id
-    resolved_document_id, text_chunks = _resolve_document_id_with_chunks(normalized_document_id)
-    raw_images = get_images_for_document(resolved_document_id)
+    resolved_document_id, text_chunks = await asyncio.to_thread(_resolve_document_id_with_chunks, normalized_document_id)
+    raw_images = await asyncio.to_thread(get_images_for_document, resolved_document_id)
     image_chunks = normalize_chroma_images(raw_images)
 
     if not text_chunks:
         return {"error": "No text chunks found for document"}
 
     try:
-        slides = generate_slide_plan(text_chunks, image_chunks)
+        slides = await asyncio.to_thread(generate_slide_plan, text_chunks, image_chunks)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Slide generation failed: {exc}") from exc
 

@@ -25,6 +25,7 @@ export default function DocumentPage() {
     const [gameLaunching, setGameLaunching] = useState(false)
     const hasAutoLaunched = useRef(false)
     const initializedDocRef = useRef("")
+    const insightsTimerRef = useRef(null)
 
     const routeDocId = useParams().id
     const rawDocId = Array.isArray(routeDocId) ? routeDocId[0] : routeDocId || ""
@@ -89,50 +90,6 @@ export default function DocumentPage() {
             setGamePhase("Initializing game pipeline...")
             hasAutoLaunched.current = false
 
-            const summaryPromise = fetch(`${apiBase}/notes/summary`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ document_id: docId }),
-            })
-                .then((res) => {
-                    if (!res.ok) throw new Error("Summary request failed")
-                    return res.json()
-                })
-                .then((data) => {
-                    setSummary(data)
-                })
-                .catch((err) => {
-                    console.error("Summary request failed:", err)
-                    setError("Could not load document insights. Please try again.")
-                })
-                .finally(() => {
-                    setSummaryLoading(false)
-                })
-
-            const notesPromise = fetch(`${apiBase}/notes`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ document_id: docId }),
-            })
-                .then((res) => {
-                    if (!res.ok) throw new Error("Notes request failed")
-                    return res.json()
-                })
-                .then((data) => {
-                    setNotes(data)
-                })
-                .catch((err) => {
-                    console.error("Notes request failed:", err)
-                    setError("Could not load document insights. Please try again.")
-                })
-                .finally(() => {
-                    setNotesLoading(false)
-                })
-
             const videoPromise = fetch(`${apiBase}/generate_video/${encodedDocId}`, {
                 method: "POST",
             })
@@ -175,10 +132,65 @@ export default function DocumentPage() {
                     setGameError("Could not start game generation.")
                 })
 
-            await Promise.allSettled([summaryPromise, notesPromise, videoPromise, gamePromise])
+            // Prioritize generator startup, then load insight panes.
+            if (insightsTimerRef.current) clearTimeout(insightsTimerRef.current)
+            insightsTimerRef.current = setTimeout(() => {
+                fetch(`${apiBase}/notes/summary`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ document_id: docId }),
+                })
+                    .then((res) => {
+                        if (!res.ok) throw new Error("Summary request failed")
+                        return res.json()
+                    })
+                    .then((data) => {
+                        setSummary(data)
+                    })
+                    .catch((err) => {
+                        console.error("Summary request failed:", err)
+                        setError("Could not load document insights. Please try again.")
+                    })
+                    .finally(() => {
+                        setSummaryLoading(false)
+                    })
+
+                fetch(`${apiBase}/notes`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ document_id: docId }),
+                })
+                    .then((res) => {
+                        if (!res.ok) throw new Error("Notes request failed")
+                        return res.json()
+                    })
+                    .then((data) => {
+                        setNotes(data)
+                    })
+                    .catch((err) => {
+                        console.error("Notes request failed:", err)
+                        setError("Could not load document insights. Please try again.")
+                    })
+                    .finally(() => {
+                        setNotesLoading(false)
+                    })
+            }, 250)
+
+            await Promise.allSettled([videoPromise, gamePromise])
         }
 
         fetchData()
+
+        return () => {
+            if (insightsTimerRef.current) {
+                clearTimeout(insightsTimerRef.current)
+                insightsTimerRef.current = null
+            }
+        }
     }, [apiBase, docId])
 
     useEffect(() => {

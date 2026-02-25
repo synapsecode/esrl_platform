@@ -41,7 +41,6 @@ def _ensure_dirs(base_dir: str = "media") -> Dict[str, str]:
         "audio": os.path.join(base_dir, "audio"),
         "html": os.path.join(base_dir, "html"),
         "video": os.path.join(base_dir, "video"),
-        "images": os.path.join(base_dir, "images"),
     }
     for path in dirs.values():
         Path(path).mkdir(parents=True, exist_ok=True)
@@ -462,7 +461,7 @@ async def html_to_video(
 
 
 # =====================================================
-# STEP 6 - Image + Audio -> Video
+# STEP 6 - Video + Audio -> MP4
 # =====================================================
 
 def image_audio_to_video(webm_path, audio_path, duration, slide_id, video_dir: str = "media/video"):
@@ -652,9 +651,14 @@ async def generate_video_parallel(slides: List[Dict[str, Any]], image_chunks: Li
     video_dir = run_dirs["video"]
     run_id = run_dirs["run_id"]
 
-    tts_max = _safe_int_env("VIDEO_TTS_MAX_CONCURRENCY", 5)
-    render_max = _safe_int_env("VIDEO_RENDER_MAX_CONCURRENCY", 3)
-    mux_max = _safe_int_env("VIDEO_FFMPEG_MAX_CONCURRENCY", 3)
+    target_parallel = min(7, max(1, len(slides)))
+    default_tts = target_parallel
+    default_render = min(4, target_parallel)
+    default_mux = min(max(2, (os.cpu_count() or 4) // 2), target_parallel)
+
+    tts_max = min(target_parallel, _safe_int_env("VIDEO_TTS_MAX_CONCURRENCY", default_tts))
+    render_max = min(target_parallel, _safe_int_env("VIDEO_RENDER_MAX_CONCURRENCY", default_render))
+    mux_max = min(target_parallel, _safe_int_env("VIDEO_FFMPEG_MAX_CONCURRENCY", default_mux))
 
     tts_semaphore = asyncio.Semaphore(tts_max)
     render_semaphore = asyncio.Semaphore(render_max)

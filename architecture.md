@@ -99,7 +99,7 @@ Flow:
    - Generate TTS audio (`gemini-2.5-flash-preview-tts`, PCM -> WAV)
    - Render themed slide HTML
 4. Render/mux slides in parallel (bounded concurrency):
-   - Record each slide as WebM using Playwright Chromium
+   - Record each slide as WebM with Playwright Chromium
    - Mux WebM + WAV into MP4 with FFmpeg
 5. Sort successful slides by `slide_index` and stitch with FFmpeg concat into final MP4
 6. Emit run-scoped terminal progress logs per slide (`[video:<run_id>] ...`) for easier debugging
@@ -254,9 +254,10 @@ Backend:
 - `GEMINI_API_KEY`: required for chat/notes/summary/video
 - `GAME_ENGINE_API_URL`: default `http://127.0.0.1:8000`
 - `GAME_ENGINE_TIMEOUT_SECONDS`: default `30`
-- `VIDEO_TTS_MAX_CONCURRENCY`: max parallel TTS tasks (default `5`)
-- `VIDEO_RENDER_MAX_CONCURRENCY`: max parallel Playwright render tasks (default `3`)
-- `VIDEO_FFMPEG_MAX_CONCURRENCY`: max parallel FFmpeg mux tasks (default `3`)
+- `VIDEO_TTS_MAX_CONCURRENCY`: max parallel TTS tasks (default up to slide count, max 7)
+- `VIDEO_RENDER_MAX_CONCURRENCY`: max parallel render tasks (default up to slide count, max 7)
+- `VIDEO_FFMPEG_MAX_CONCURRENCY`: max parallel FFmpeg mux tasks (default auto-scales with CPU, max 7)
+- `UPLOAD_IMAGE_MAX_CONCURRENCY`: upload-time image caption/OCR worker count (default `4`)
 
 Frontend:
 - `NEXT_PUBLIC_API_URI`: backend base URL (should point to `http://127.0.0.1:5140` in current local setup)
