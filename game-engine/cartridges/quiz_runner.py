@@ -40,9 +40,26 @@ COLORS = {
     "wrong": (233, 111, 111),
 }
 
+STYLE_PALETTES = {
+    "concept_sprint_v2": {},
+    "misconception_meteor_v1": {
+        "bg": (25, 12, 20),
+        "panel": (40, 16, 30),
+        "panel_alt": (58, 23, 42),
+        "accent": (255, 170, 120),
+        "success": (124, 236, 175),
+        "danger": (255, 112, 138),
+        "warning": (255, 196, 116),
+        "player": (255, 210, 142),
+        "correct": (120, 226, 152),
+        "wrong": (232, 101, 126),
+    },
+}
+
 DEFAULT_SPEC = {
     "title": "Concept Sprint",
     "theme": "Collect the correct answers and avoid wrong ones.",
+    "style_variant": "concept_sprint_v2",
     "instructions": [
         "Move left/right with Arrow keys or A/D.",
         "Catch the correct answer bubble for each prompt.",
@@ -111,6 +128,9 @@ class QuizRunnerGame:
     def __init__(self, raw_spec: dict):
         self.spec = normalize_spec(raw_spec)
         self.title = self.spec["title"]
+        style_variant = self.spec.get("style_variant") or "concept_sprint_v2"
+        self.colors = dict(COLORS)
+        self.colors.update(STYLE_PALETTES.get(style_variant, {}))
         random.seed(self.title)
 
         pygame.init()
@@ -133,7 +153,7 @@ class QuizRunnerGame:
 
         self.state = "instructions"
         self.feedback_text = ""
-        self.feedback_color = COLORS["text"]
+        self.feedback_color = self.colors["text"]
         self.feedback_until_ms = 0
         self.level_banner_until_ms = 0
         self.question_started_ms = 0
@@ -244,10 +264,10 @@ class QuizRunnerGame:
     def _apply_result(self, correct: bool, reason: str, explanation: str) -> None:
         if correct:
             self.correct_answers += 1
-            self.feedback_color = COLORS["success"]
+            self.feedback_color = self.colors["success"]
         else:
             self.lives -= 1
-            self.feedback_color = COLORS["danger"]
+            self.feedback_color = self.colors["danger"]
 
         self.feedback_text = f"{reason} {explanation}"
         self.feedback_until_ms = pygame.time.get_ticks() + 1700
@@ -273,7 +293,7 @@ class QuizRunnerGame:
         self.question_index = 0
         level_name = self.levels[self.level_index]["name"]
         self.feedback_text = f"{level_name} begins. Stay focused."
-        self.feedback_color = COLORS["accent"]
+        self.feedback_color = self.colors["accent"]
         now_ms = pygame.time.get_ticks()
         self.feedback_until_ms = now_ms + 1300
         self.level_banner_until_ms = now_ms + 1300
@@ -310,7 +330,7 @@ class QuizRunnerGame:
         self.question_started_ms = pygame.time.get_ticks()
 
     def _draw(self, now_ms: int) -> None:
-        self.screen.fill(COLORS["bg"])
+        self.screen.fill(self.colors["bg"])
         self._draw_background_panels()
         self._draw_header(now_ms)
 
@@ -324,44 +344,44 @@ class QuizRunnerGame:
             self._draw_end_screen(False)
 
     def _draw_background_panels(self) -> None:
-        pygame.draw.rect(self.screen, COLORS["panel"], (16, 16, SCREEN_WIDTH - 32, SCREEN_HEIGHT - 32), border_radius=18)
-        pygame.draw.rect(self.screen, COLORS["panel_alt"], (24, 24, SCREEN_WIDTH - 48, 120), border_radius=14)
+        pygame.draw.rect(self.screen, self.colors["panel"], (16, 16, SCREEN_WIDTH - 32, SCREEN_HEIGHT - 32), border_radius=18)
+        pygame.draw.rect(self.screen, self.colors["panel_alt"], (24, 24, SCREEN_WIDTH - 48, 120), border_radius=14)
 
     def _draw_header(self, now_ms: int) -> None:
-        title = self.font_heading.render(self.title, True, COLORS["text"])
+        title = self.font_heading.render(self.title, True, self.colors["text"])
         self.screen.blit(title, (36, 36))
 
         progress = f"Level {min(self.level_index + 1, len(self.levels))}/{len(self.levels)}  |  Score {self.correct_answers}/{self.total_questions}"
-        progress_surface = self.font_body.render(progress, True, COLORS["subtle"])
+        progress_surface = self.font_body.render(progress, True, self.colors["subtle"])
         self.screen.blit(progress_surface, (36, 74))
 
-        lives_surface = self.font_body.render(f"Lives: {self.lives}", True, COLORS["warning"])
+        lives_surface = self.font_body.render(f"Lives: {self.lives}", True, self.colors["warning"])
         self.screen.blit(lives_surface, (SCREEN_WIDTH - 190, 74))
 
         if self.state == "playing":
             elapsed = now_ms - self.question_started_ms
             remaining_ms = max(0, QUESTION_TIME_LIMIT_MS - elapsed)
             seconds = remaining_ms // 1000 + 1
-            timer_surface = self.font_small.render(f"Timer: {seconds}s", True, COLORS["text"])
+            timer_surface = self.font_small.render(f"Timer: {seconds}s", True, self.colors["text"])
             self.screen.blit(timer_surface, (SCREEN_WIDTH - 170, 40))
 
     def _draw_instructions(self) -> None:
-        heading = self.font_title.render("How To Play", True, COLORS["accent"])
+        heading = self.font_title.render("How To Play", True, self.colors["accent"])
         self.screen.blit(heading, (SCREEN_WIDTH // 2 - heading.get_width() // 2, 190))
 
         y = 280
-        theme = self.font_body.render(self.spec["theme"], True, COLORS["text"])
+        theme = self.font_body.render(self.spec["theme"], True, self.colors["text"])
         self.screen.blit(theme, (SCREEN_WIDTH // 2 - theme.get_width() // 2, y))
         y += 58
 
         for instruction in self.spec["instructions"]:
             for line in wrap_text(instruction, self.font_body, 860):
-                text = self.font_body.render(f"- {line}", True, COLORS["subtle"])
+                text = self.font_body.render(f"- {line}", True, self.colors["subtle"])
                 self.screen.blit(text, (130, y))
                 y += 34
             y += 6
 
-        prompt = self.font_body.render("Press SPACE / ENTER or Left Click to start", True, COLORS["success"])
+        prompt = self.font_body.render("Press SPACE / ENTER or Left Click to start", True, self.colors["success"])
         self.screen.blit(prompt, (SCREEN_WIDTH // 2 - prompt.get_width() // 2, SCREEN_HEIGHT - 120))
 
     def _draw_playfield(self, now_ms: int) -> None:
@@ -371,7 +391,7 @@ class QuizRunnerGame:
         prompt = self.current_question.get("prompt", "")
         y = 170
         for line in wrap_text(prompt, self.font_body, 920):
-            text = self.font_body.render(line, True, COLORS["text"])
+            text = self.font_body.render(line, True, self.colors["text"])
             self.screen.blit(text, (SCREEN_WIDTH // 2 - text.get_width() // 2, y))
             y += 30
 
@@ -384,41 +404,41 @@ class QuizRunnerGame:
                 fy += 24
 
         for bubble in self.bubbles:
-            color = COLORS["correct"] if bubble.is_correct else COLORS["wrong"]
+            color = self.colors["correct"] if bubble.is_correct else self.colors["wrong"]
             pygame.draw.circle(self.screen, color, (int(bubble.x), int(bubble.y)), BUBBLE_RADIUS)
-            pygame.draw.circle(self.screen, COLORS["text"], (int(bubble.x), int(bubble.y)), BUBBLE_RADIUS, width=2)
+            pygame.draw.circle(self.screen, self.colors["text"], (int(bubble.x), int(bubble.y)), BUBBLE_RADIUS, width=2)
             lines = wrap_text(bubble.text, self.font_small, 140)
             text_y = int(bubble.y - (len(lines) * 16) / 2)
             for line in lines[:3]:
-                text_surface = self.font_small.render(line, True, COLORS["bg"])
+                text_surface = self.font_small.render(line, True, self.colors["bg"])
                 self.screen.blit(text_surface, (int(bubble.x - text_surface.get_width() / 2), text_y))
                 text_y += 16
 
-        pygame.draw.rect(self.screen, COLORS["player"], self.player, border_radius=9)
-        player_text = self.font_small.render("YOU", True, COLORS["bg"])
+        pygame.draw.rect(self.screen, self.colors["player"], self.player, border_radius=9)
+        player_text = self.font_small.render("YOU", True, self.colors["bg"])
         self.screen.blit(
             player_text,
             (self.player.centerx - player_text.get_width() // 2, self.player.centery - player_text.get_height() // 2),
         )
 
-        controls = self.font_small.render("Move: Arrow keys or A/D | ESC: End game", True, COLORS["subtle"])
+        controls = self.font_small.render("Move: Arrow keys or A/D | ESC: End game", True, self.colors["subtle"])
         self.screen.blit(controls, (58, SCREEN_HEIGHT - 44))
 
     def _draw_end_screen(self, is_victory: bool) -> None:
         heading_text = "Level Mastered!" if is_victory else "Game Over"
-        heading_color = COLORS["success"] if is_victory else COLORS["danger"]
+        heading_color = self.colors["success"] if is_victory else self.colors["danger"]
         heading = self.font_title.render(heading_text, True, heading_color)
         self.screen.blit(heading, (SCREEN_WIDTH // 2 - heading.get_width() // 2, 210))
 
         summary = f"Final Score: {self.correct_answers}/{self.total_questions}"
-        summary_surface = self.font_heading.render(summary, True, COLORS["text"])
+        summary_surface = self.font_heading.render(summary, True, self.colors["text"])
         self.screen.blit(summary_surface, (SCREEN_WIDTH // 2 - summary_surface.get_width() // 2, 300))
 
         if not is_victory and self.game_over_reason:
-            reason = self.font_body.render(self.game_over_reason, True, COLORS["subtle"])
+            reason = self.font_body.render(self.game_over_reason, True, self.colors["subtle"])
             self.screen.blit(reason, (SCREEN_WIDTH // 2 - reason.get_width() // 2, 350))
 
-        prompt = self.font_body.render("Press R or Left Click to restart, ESC to exit", True, COLORS["subtle"])
+        prompt = self.font_body.render("Press R or Left Click to restart, ESC to exit", True, self.colors["subtle"])
         self.screen.blit(prompt, (SCREEN_WIDTH // 2 - prompt.get_width() // 2, 430))
 
     def _restart(self) -> None:
@@ -441,6 +461,7 @@ def normalize_spec(spec: dict) -> dict:
     merged = dict(DEFAULT_SPEC)
     merged["title"] = clip_text(spec.get("title") or DEFAULT_SPEC["title"], 80)
     merged["theme"] = clip_text(spec.get("theme") or DEFAULT_SPEC["theme"], 200)
+    merged["style_variant"] = clip_text(spec.get("style_variant") or DEFAULT_SPEC.get("style_variant") or "concept_sprint_v2", 40)
 
     instructions = spec.get("instructions") or DEFAULT_SPEC["instructions"]
     if not isinstance(instructions, list):

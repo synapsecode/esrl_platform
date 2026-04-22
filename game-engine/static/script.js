@@ -179,6 +179,7 @@ function updateProgress(data) {
     } else if (
         status === 'generating_cartridge_spec' ||
         status === 'building_cartridge' ||
+        status === 'selecting_cartridge' ||
         status === 'generating_code' ||
         status === 'repairing_code' ||
         phase.includes('Cartridge') ||
@@ -221,12 +222,14 @@ function showResult(data) {
 
     const mode = data.generation_mode || 'unknown';
     document.getElementById('generationMode').textContent = mode;
+    document.getElementById('selectedCartridge').textContent = data.selected_cartridge || 'none';
 
     const qualityReport = data.quality_report || {};
     const score = typeof qualityReport.score === 'number' ? qualityReport.score : 'n/a';
     document.getElementById('qualityScore').textContent = String(score);
+    const selectionInfo = formatSelectionInfo(data.cartridge_selection || {});
     const fallbackNote = data.fallback_reason ? `Fallback: ${data.fallback_reason}\n\n` : '';
-    document.getElementById('qualityChecksContent').textContent = fallbackNote + formatQualityChecks(qualityReport);
+    document.getElementById('qualityChecksContent').textContent = selectionInfo + fallbackNote + formatQualityChecks(qualityReport);
 }
 
 function formatQualityChecks(report) {
@@ -241,6 +244,25 @@ function formatQualityChecks(report) {
         lines.push('');
         lines.push(`Runtime: ${report.runtime.details}`);
     }
+    return lines.join('\n');
+}
+
+function formatSelectionInfo(selection) {
+    if (!selection || typeof selection !== 'object' || !selection.selection_mode) {
+        return '';
+    }
+    const lines = [
+        `Selection Mode: ${selection.selection_mode}`,
+        `Selection Confidence: ${typeof selection.confidence === 'number' ? selection.confidence : 'n/a'}`,
+        `Selection Reason: ${selection.reason || 'n/a'}`
+    ];
+    if (Array.isArray(selection.candidates) && selection.candidates.length > 0) {
+        lines.push('Candidates:');
+        selection.candidates.slice(0, 3).forEach(candidate => {
+            lines.push(`- ${candidate.cartridge_id} (${candidate.score})`);
+        });
+    }
+    lines.push('');
     return lines.join('\n');
 }
 
@@ -294,6 +316,7 @@ function resetForm() {
 
     document.getElementById('progressFill').style.width = '0%';
     document.getElementById('generationMode').textContent = '';
+    document.getElementById('selectedCartridge').textContent = '';
     document.getElementById('qualityScore').textContent = '';
     document.getElementById('qualityChecksContent').textContent = '';
 }

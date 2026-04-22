@@ -79,15 +79,16 @@ class GameQualityHarness:
         script = sanitize_generated_code(code)
         analysis_code = script
 
-        if "from cartridges.quiz_runner import run_game_from_spec" in script:
-            cartridge_code = self._load_cartridge_source("quiz_runner.py")
+        cartridge_module = self._extract_cartridge_module(script)
+        if cartridge_module:
+            cartridge_code = self._load_cartridge_source(f"{cartridge_module}.py")
             if cartridge_code:
                 analysis_code = f"{script}\n\n# cartridge_source\n{cartridge_code}"
                 checks.append(
                     HarnessCheck(
                         name="cartridge_source_loaded",
                         passed=True,
-                        details="Loaded shared cartridge source for static checks",
+                        details=f"Loaded shared cartridge source ({cartridge_module}) for static checks",
                         critical=False,
                     )
                 )
@@ -96,7 +97,7 @@ class GameQualityHarness:
                     HarnessCheck(
                         name="cartridge_source_loaded",
                         passed=False,
-                        details="Cartridge wrapper detected but shared source could not be loaded",
+                        details=f"Cartridge wrapper detected but source ({cartridge_module}) could not be loaded",
                         critical=True,
                     )
                 )
@@ -246,6 +247,12 @@ class GameQualityHarness:
                 return handle.read()
         except Exception:
             return None
+
+    def _extract_cartridge_module(self, code: str) -> Optional[str]:
+        match = re.search(r"from\s+cartridges\.([a-zA-Z0-9_]+)\s+import\s+run_game_from_spec", code)
+        if not match:
+            return None
+        return match.group(1)
 
 
 def _last_lines(text: str, keep: int = 10) -> str:

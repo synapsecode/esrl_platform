@@ -14,18 +14,21 @@ from pydantic import BaseModel
 
 from agents import (
     cartridge_spec_agent,
+    cartridge_selection_agent,
     code_generation_agent,
     code_repair_agent,
     game_design_agent,
     level_design_agent,
 )
 from cartridge_builder import (
-    DEFAULT_CARTRIDGE,
     build_cartridge_game_code,
+    cartridge_catalog_for_prompt,
     build_design_summary,
     build_level_summary,
     extract_json_payload,
+    select_best_cartridge,
 )
+from cartridges.catalog import get_cartridge
 from quality_harness import GameQualityHarness, sanitize_generated_code
 
 app = FastAPI(title="eSRL Game Generator")
@@ -101,6 +104,8 @@ def _complete_task(
     quality_report: dict,
     validation_history: list,
     fallback_reason: str = "",
+    selected_cartridge: str = "",
+    cartridge_selection: Optional[dict] = None,
 ) -> None:
     _set_task(
         task_id,
@@ -111,6 +116,8 @@ def _complete_task(
         game_design=game_design,
         level_design=level_design,
         generation_mode=generation_mode,
+        selected_cartridge=selected_cartridge,
+        cartridge_selection=cartridge_selection or {},
         quality_report=quality_report,
         validation_history=validation_history,
         fallback_reason=fallback_reason,
@@ -134,66 +141,120 @@ def run_game_generation(task_id: str, study_notes: str):
         os.makedirs("pygames", exist_ok=True)
         game_file = f"pygames/game_{task_id}.py"
 
-        _set_task(task_id, status="generating_design", phase="Game Design (1/5)")
+        _set_task(task_id, status="generating_design", phase="Game Design (1/8)")
         game_design = game_design_agent.run(study_notes)
         _set_task(task_id, game_design=game_design)
 
-        _set_task(task_id, status="generating_levels", phase="Level Design (2/5)")
+        _set_task(task_id, status="generating_levels", phase="Level Design (2/8)")
         level_design = level_design_agent.run(game_design)
         _set_task(task_id, level_design=level_design)
 
         validation_history = []
         fallback_reason = ""
+        selected_cartridge = ""
+        cartridge_selection: Dict = {}
 
         if ENABLE_CARTRIDGE_PIPELINE:
-            _set_task(task_id, status="generating_cartridge_spec", phase="Cartridge Spec (3/5)")
-            raw_spec = cartridge_spec_agent.run(study_notes, game_design, level_design)
-            parsed_spec = extract_json_payload(raw_spec)
-            if parsed_spec:
-                cartridge_game_design = build_design_summary(parsed_spec, DEFAULT_CARTRIDGE)
-                cartridge_level_design = build_level_summary(parsed_spec)
-                _set_task(
-                    task_id,
-                    status="building_cartridge",
-                    phase="Building Cartridge Game (4/5)",
-                    game_design=cartridge_game_design,
-                    level_design=cartridge_level_design,
-                    cartridge=DEFAULT_CARTRIDGE,
-                    cartridge_spec=parsed_spec,
-                )
-                cartridge_code = build_cartridge_game_code(parsed_spec, DEFAULT_CARTRIDGE)
-                _write_game_file(game_file, cartridge_code)
+            catalog = cartridge_catalog_for_prompt()
+            _set_task(
+                task_id,
+                status="selecting_cartridge",
+                phase="Cartridge Selection (3/8)",
+                available_cartridges=len(catalog),
+            )
 
-                _set_task(task_id, status="validating", phase="Quality Validation (5/5)")
-                cartridge_report = harness.run(
-                    code=cartridge_code,
-                    game_file=game_file,
-                    python_path=python_path,
-                    runtime_timeout_sec=SMOKE_TEST_TIMEOUT_SEC,
-                    run_runtime=ENABLE_RUNTIME_SMOKE_TEST,
-                )
-                cartridge_report_dict = cartridge_report.to_dict()
-                cartridge_report_dict["attempt"] = 1
-                cartridge_report_dict["mode"] = "cartridge"
-                validation_history.append(cartridge_report_dict)
+            llm_selection = {}
+            try:
+                raw_selection = cartridge_selection_agent.run(study_notes, game_design, level_design, catalog)
+                llm_selection = extract_json_payload(raw_selection) or {}
+            except Exception as selection_error:
+                llm_selection = {
+                    "selected_cartridge": "none",
+                    "confidence": 0.0,
+                    "reason": f"Selection model unavailable: {selection_error}",
+                }
 
-                if cartridge_report.passed:
-                    _complete_task(
-                        task_id=task_id,
-                        game_file=game_file,
-                        code=cartridge_code,
-                        game_design=cartridge_game_design,
-                        level_design=cartridge_level_design,
-                        generation_mode="cartridge",
-                        quality_report=cartridge_report_dict,
-                        validation_history=validation_history,
-                    )
-                    return
-                fallback_reason = f"Cartridge quality check failed: {_error_summary(cartridge_report_dict)}"
+            cartridge_selection = select_best_cartridge(
+                study_notes=study_notes,
+                game_design=game_design,
+                level_design=level_design,
+                llm_selection=llm_selection,
+            )
+            selected_cartridge = cartridge_selection.get("selected_cartridge") or ""
+            _set_task(
+                task_id,
+                cartridge_selection=cartridge_selection,
+                selected_cartridge=selected_cartridge,
+            )
+
+            if selected_cartridge and selected_cartridge != "none":
+                cartridge_profile = get_cartridge(selected_cartridge)
+                if not cartridge_profile:
+                    fallback_reason = f"Selected cartridge '{selected_cartridge}' not found."
+                else:
+                    _set_task(task_id, status="generating_cartridge_spec", phase="Cartridge Spec (4/8)")
+                    try:
+                        raw_spec = cartridge_spec_agent.run(
+                            study_notes=study_notes,
+                            game_design=game_design,
+                            level_design=level_design,
+                            cartridge_profile=cartridge_profile.to_dict(),
+                        )
+                        parsed_spec = extract_json_payload(raw_spec)
+                    except Exception as spec_error:
+                        parsed_spec = None
+                        fallback_reason = f"Cartridge spec generation failed: {spec_error}"
+
+                    if parsed_spec:
+                        parsed_spec["style_variant"] = selected_cartridge
+                        cartridge_game_design = build_design_summary(parsed_spec, selected_cartridge)
+                        cartridge_level_design = build_level_summary(parsed_spec)
+                        _set_task(
+                            task_id,
+                            status="building_cartridge",
+                            phase="Building Cartridge Game (5/8)",
+                            game_design=cartridge_game_design,
+                            level_design=cartridge_level_design,
+                            cartridge=selected_cartridge,
+                            cartridge_spec=parsed_spec,
+                        )
+                        cartridge_code = build_cartridge_game_code(parsed_spec, selected_cartridge)
+                        _write_game_file(game_file, cartridge_code)
+
+                        _set_task(task_id, status="validating", phase="Quality Validation (6/8)")
+                        cartridge_report = harness.run(
+                            code=cartridge_code,
+                            game_file=game_file,
+                            python_path=python_path,
+                            runtime_timeout_sec=SMOKE_TEST_TIMEOUT_SEC,
+                            run_runtime=ENABLE_RUNTIME_SMOKE_TEST,
+                        )
+                        cartridge_report_dict = cartridge_report.to_dict()
+                        cartridge_report_dict["attempt"] = 1
+                        cartridge_report_dict["mode"] = "cartridge"
+                        validation_history.append(cartridge_report_dict)
+
+                        if cartridge_report.passed:
+                            _complete_task(
+                                task_id=task_id,
+                                game_file=game_file,
+                                code=cartridge_code,
+                                game_design=cartridge_game_design,
+                                level_design=cartridge_level_design,
+                                generation_mode="cartridge",
+                                quality_report=cartridge_report_dict,
+                                validation_history=validation_history,
+                                selected_cartridge=selected_cartridge,
+                                cartridge_selection=cartridge_selection,
+                            )
+                            return
+                        fallback_reason = f"Cartridge quality check failed: {_error_summary(cartridge_report_dict)}"
+                    elif not fallback_reason:
+                        fallback_reason = "Cartridge spec generation did not return valid JSON."
             else:
-                fallback_reason = "Cartridge spec generation did not return valid JSON."
+                fallback_reason = cartridge_selection.get("reason") or "No cartridge matched."
 
-        _set_task(task_id, status="generating_code", phase="Freeform Code Generation (fallback)")
+        _set_task(task_id, status="generating_code", phase="Custom Code Generation (fallback) (7/8)")
         generated_code = ""
         for attempt in range(1, MAX_CODE_ATTEMPTS + 1):
             if attempt == 1:
@@ -239,6 +300,8 @@ def run_game_generation(task_id: str, study_notes: str):
                     quality_report=report_dict,
                     validation_history=validation_history,
                     fallback_reason=fallback_reason,
+                    selected_cartridge=selected_cartridge,
+                    cartridge_selection=cartridge_selection,
                 )
                 return
 
@@ -323,6 +386,8 @@ async def generate_game(game_request: GameRequest, background_tasks: BackgroundT
         "study_notes": text[:12000],
         "validation_history": [],
         "generation_mode": "pending",
+        "selected_cartridge": "",
+        "cartridge_selection": {},
     })
     _prune_history()
 
@@ -369,10 +434,19 @@ async def get_history():
             "created_at": data.get("created_at"),
             "completed_at": data.get("completed_at"),
             "generation_mode": data.get("generation_mode"),
+            "selected_cartridge": data.get("selected_cartridge"),
         })
 
     history.sort(key=lambda x: x["created_at"], reverse=True)
     return history[:10]
+
+
+@app.get("/api/cartridges")
+async def get_cartridges():
+    return {
+        "count": len(cartridge_catalog_for_prompt()),
+        "cartridges": cartridge_catalog_for_prompt(),
+    }
 
 if __name__ == "__main__":
     import uvicorn

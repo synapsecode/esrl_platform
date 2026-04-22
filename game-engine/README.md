@@ -4,8 +4,11 @@ AI-powered PyGame mini-game creator that transforms study notes into interactive
 
 ## Features
 
+- **10+ educational cartridges** spanning distinct mechanics (falling catch, lane routing, orbit targeting, matrix reveal, turret defense, sequence sprint)
+- **Automatic cartridge selection** from source content + design context
 - **Reliability-first generation** with deterministic cartridge mechanics
 - **Quality harness** with syntax checks, static checks, and runtime smoke tests
+- **Automatic fallback to custom game code** when no cartridge fit is strong
 - **Automatic repair loop** for freeform fallback code generation
 - **Structured progress + validation visibility** in the web UI
 - **Health endpoints** for liveness/readiness checks
@@ -34,15 +37,26 @@ AI-powered PyGame mini-game creator that transforms study notes into interactive
 5. Wait for the generation to complete
 6. Click "Launch Game" to play
 
+### API Helpers
+
+- `GET /api/cartridges` returns the current cartridge catalog used for routing.
+
 ## Project Structure
 
 ```
 ├── app.py                     # FastAPI application + generation pipeline
-├── agents.py                  # AI agents (design/levels/cartridge spec/code/repair)
-├── cartridge_builder.py       # JSON extraction + deterministic wrapper generation
+├── agents.py                  # AI agents (design/levels/selection/spec/code/repair)
+├── cartridge_builder.py       # JSON extraction + cartridge selection + wrapper generation
 ├── quality_harness.py         # Syntax/static/runtime validation harness
 ├── cartridges/
-│   └── quiz_runner.py         # Shared gameplay mechanics cartridge
+│   ├── catalog.py             # Cartridge metadata + heuristic ranker
+│   ├── common.py              # Shared cartridge utilities
+│   ├── quiz_runner.py         # Falling catch mechanic
+│   ├── lane_sort_runner.py    # Lane routing mechanic
+│   ├── orbit_hunt_runner.py   # Orbit targeting mechanic
+│   ├── memory_matrix_runner.py # Grid reveal mechanic
+│   ├── concept_defense_runner.py # Turret defense mechanic
+│   └── sequence_sprint_runner.py # Sliding decision mechanic
 ├── gemini_client.py           # Gemini API wrapper
 ├── orchestrator_gemini.py     # CLI orchestrator (legacy helper)
 ├── start_server.sh            # Startup script
@@ -67,11 +81,26 @@ AI-powered PyGame mini-game creator that transforms study notes into interactive
 1. **Input**: User provides study notes about any topic
 2. **Game Design Agent**: Creates an interactive game concept based on the notes
 3. **Level Design Agent**: Designs 3 progressive difficulty levels
-4. **Cartridge Spec Agent**: Produces strict JSON content for shared mechanics
-5. **Cartridge Build**: Server generates deterministic game wrapper code
-6. **Quality Harness**: Runs syntax + static + runtime validation
-7. **Fallback (if needed)**: Freeform generation with auto-repair attempts
-8. **Output**: Validated Python game file that can be launched immediately
+4. **Cartridge Selection Agent + Heuristic Ranker**: Chooses best-fit cartridge from catalog
+5. **Cartridge Spec Agent**: Produces strict JSON content tailored to selected mechanic
+6. **Cartridge Build**: Server generates deterministic game wrapper code
+7. **Quality Harness**: Runs syntax + static + runtime validation
+8. **Fallback (if needed)**: If no cartridge fits (or validation fails), use freeform generation with auto-repair attempts
+9. **Output**: Validated Python game file that can be launched immediately
+
+## Cartridge Catalog
+
+- `concept_sprint_v2`
+- `misconception_meteor_v1`
+- `lane_sort_lab_v1`
+- `category_cascade_v1`
+- `orbit_hunt_v1`
+- `signal_chase_v1`
+- `memory_matrix_v1`
+- `flash_grid_v1`
+- `concept_defense_v1`
+- `sequence_sprint_v1`
+- `theorem_turret_v1`
 
 ## Environment Flags
 
