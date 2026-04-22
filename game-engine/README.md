@@ -4,14 +4,11 @@ AI-powered PyGame mini-game creator that transforms study notes into interactive
 
 ## Features
 
-- **AI-Powered Generation**: Uses Gemini AI to create game designs, level progressions, and PyGame code
-- **Web Interface**: Beautiful, modern UI built with FastAPI and Jinja2
-- **Real-time Progress**: Watch your game being generated in real-time
-- **Auto-Launch**: Automatically launches generated games
-- **3-Phase Pipeline**:
-  1. Game Design - Creates game concept from study notes
-  2. Level Design - Designs progressive difficulty levels
-  3. Code Generation - Generates complete PyGame code
+- **Reliability-first generation** with deterministic cartridge mechanics
+- **Quality harness** with syntax checks, static checks, and runtime smoke tests
+- **Automatic repair loop** for freeform fallback code generation
+- **Structured progress + validation visibility** in the web UI
+- **Health endpoints** for liveness/readiness checks
 
 ## Setup
 
@@ -37,28 +34,24 @@ AI-powered PyGame mini-game creator that transforms study notes into interactive
 5. Wait for the generation to complete
 6. Click "Launch Game" to play
 
-### Command Line
-
-```bash
-source venv/bin/activate
-python run.py
-```
-
 ## Project Structure
 
 ```
-├── app.py                    # FastAPI application
-├── agents.py                 # AI agents (game design, level design, code generation)
-├── gemini_client.py          # Gemini API wrapper
-├── orchestrator_gemini.py    # Workflow orchestrator
-├── run.py                    # CLI runner
-├── start_server.sh           # Startup script
+├── app.py                     # FastAPI application + generation pipeline
+├── agents.py                  # AI agents (design/levels/cartridge spec/code/repair)
+├── cartridge_builder.py       # JSON extraction + deterministic wrapper generation
+├── quality_harness.py         # Syntax/static/runtime validation harness
+├── cartridges/
+│   └── quiz_runner.py         # Shared gameplay mechanics cartridge
+├── gemini_client.py           # Gemini API wrapper
+├── orchestrator_gemini.py     # CLI orchestrator (legacy helper)
+├── start_server.sh            # Startup script
 ├── templates/
-│   └── index.html           # Web UI template
+│   └── index.html             # Web UI template
 ├── static/
-│   ├── style.css            # Styles
-│   └── script.js            # Frontend logic
-└── pygames/                 # Generated games directory
+│   ├── style.css              # Styles
+│   └── script.js              # Frontend logic
+└── pygames/                   # Generated games directory
 ```
 
 ## Requirements
@@ -74,8 +67,19 @@ python run.py
 1. **Input**: User provides study notes about any topic
 2. **Game Design Agent**: Creates an interactive game concept based on the notes
 3. **Level Design Agent**: Designs 3 progressive difficulty levels
-4. **Code Generation Agent**: Generates complete, runnable PyGame code
-5. **Output**: Self-contained Python game file that can be launched immediately
+4. **Cartridge Spec Agent**: Produces strict JSON content for shared mechanics
+5. **Cartridge Build**: Server generates deterministic game wrapper code
+6. **Quality Harness**: Runs syntax + static + runtime validation
+7. **Fallback (if needed)**: Freeform generation with auto-repair attempts
+8. **Output**: Validated Python game file that can be launched immediately
+
+## Environment Flags
+
+- `ENABLE_CARTRIDGE_PIPELINE` (`1` by default)
+- `ENABLE_RUNTIME_SMOKE_TEST` (`1` by default)
+- `MAX_CODE_ATTEMPTS` (`3` by default)
+- `SMOKE_TEST_TIMEOUT_SEC` (`8` by default)
+- `MAX_TASK_HISTORY` (`200` by default)
 
 ## Example Topics
 

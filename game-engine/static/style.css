@@ -243,6 +243,42 @@ body {
     gap: 1rem;
 }
 
+.quality-summary {
+    margin: 1.5rem 0;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--bg);
+}
+
+.quality-summary p {
+    margin-bottom: 0.5rem;
+    color: var(--text-muted);
+}
+
+.quality-summary details {
+    margin-top: 0.75rem;
+    background: transparent;
+    border: 0;
+}
+
+.quality-summary summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.quality-summary pre {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    max-height: 250px;
+    overflow-y: auto;
+    background: rgba(15, 23, 42, 0.7);
+    border-radius: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+}
+
 .result-details {
     margin-top: 2rem;
 }

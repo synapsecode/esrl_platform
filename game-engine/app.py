@@ -1,16 +1,32 @@
-from fastapi import FastAPI, Request, BackgroundTasks
-from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, HTMLResponse
-from pydantic import BaseModel
-import subprocess
 import os
-import uuid
+import subprocess
 import sys
 import threading
+import uuid
 from datetime import datetime
 from typing import Dict, Optional
-from agents import game_design_agent, level_design_agent, code_generation_agent
+
+from fastapi import BackgroundTasks, FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
+
+from agents import (
+    cartridge_spec_agent,
+    code_generation_agent,
+    code_repair_agent,
+    game_design_agent,
+    level_design_agent,
+)
+from cartridge_builder import (
+    DEFAULT_CARTRIDGE,
+    build_cartridge_game_code,
+    build_design_summary,
+    build_level_summary,
+    extract_json_payload,
+)
+from quality_harness import GameQualityHarness, sanitize_generated_code
 
 app = FastAPI(title="eSRL Game Generator")
 
@@ -20,6 +36,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 generation_status: Dict[str, Dict] = {}
 status_lock = threading.Lock()
 MAX_TASK_HISTORY = int(os.getenv("MAX_TASK_HISTORY", "200"))
+MAX_CODE_ATTEMPTS = int(os.getenv("MAX_CODE_ATTEMPTS", "3"))
+SMOKE_TEST_TIMEOUT_SEC = int(os.getenv("SMOKE_TEST_TIMEOUT_SEC", "8"))
+ENABLE_CARTRIDGE_PIPELINE = os.getenv("ENABLE_CARTRIDGE_PIPELINE", "1") != "0"
+ENABLE_RUNTIME_SMOKE_TEST = os.getenv("ENABLE_RUNTIME_SMOKE_TEST", "1") != "0"
 
 class GameRequest(BaseModel):
     study_notes: str
@@ -60,40 +80,178 @@ def _prune_history():
         generation_status.clear()
         generation_status.update(retained)
 
+
+def _resolve_python_path() -> str:
+    venv_python = os.path.join(os.getcwd(), "venv", "bin", "python")
+    return venv_python if os.path.exists(venv_python) else sys.executable
+
+
+def _write_game_file(path: str, code: str) -> None:
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(code)
+
+
+def _complete_task(
+    task_id: str,
+    game_file: str,
+    code: str,
+    game_design: str,
+    level_design: str,
+    generation_mode: str,
+    quality_report: dict,
+    validation_history: list,
+    fallback_reason: str = "",
+) -> None:
+    _set_task(
+        task_id,
+        status="completed",
+        phase="Complete",
+        game_file=game_file,
+        code=code,
+        game_design=game_design,
+        level_design=level_design,
+        generation_mode=generation_mode,
+        quality_report=quality_report,
+        validation_history=validation_history,
+        fallback_reason=fallback_reason,
+        completed_at=datetime.now().isoformat(),
+    )
+
+
+def _error_summary(report: dict) -> str:
+    checks = report.get("checks") if isinstance(report, dict) else []
+    failed = [check for check in checks if not check.get("passed")]
+    if not failed:
+        return "validation failed with unknown reason"
+    first = failed[0]
+    return f"{first.get('name')}: {first.get('details')}"
+
+
 def run_game_generation(task_id: str, study_notes: str):
     try:
-        _set_task(task_id, status="generating_design", phase="Game Design (1/3)")
-
-        game_design = game_design_agent.run(study_notes)
-        _set_task(task_id, game_design=game_design)
-
-        _set_task(task_id, status="generating_levels", phase="Level Design (2/3)")
-
-        level_design = level_design_agent.run(game_design)
-        _set_task(task_id, level_design=level_design)
-
-        _set_task(task_id, status="generating_code", phase="Code Generation (3/3)")
-
-        code = code_generation_agent.run(game_design, level_design)
-        code = code.replace('```python', '').replace('```', '').strip()
-
+        harness = GameQualityHarness()
+        python_path = _resolve_python_path()
         os.makedirs("pygames", exist_ok=True)
         game_file = f"pygames/game_{task_id}.py"
 
-        with open(game_file, "w", encoding="utf-8") as f:
-            f.write(code)
+        _set_task(task_id, status="generating_design", phase="Game Design (1/5)")
+        game_design = game_design_agent.run(study_notes)
+        _set_task(task_id, game_design=game_design)
 
+        _set_task(task_id, status="generating_levels", phase="Level Design (2/5)")
+        level_design = level_design_agent.run(game_design)
+        _set_task(task_id, level_design=level_design)
+
+        validation_history = []
+        fallback_reason = ""
+
+        if ENABLE_CARTRIDGE_PIPELINE:
+            _set_task(task_id, status="generating_cartridge_spec", phase="Cartridge Spec (3/5)")
+            raw_spec = cartridge_spec_agent.run(study_notes, game_design, level_design)
+            parsed_spec = extract_json_payload(raw_spec)
+            if parsed_spec:
+                cartridge_game_design = build_design_summary(parsed_spec, DEFAULT_CARTRIDGE)
+                cartridge_level_design = build_level_summary(parsed_spec)
+                _set_task(
+                    task_id,
+                    status="building_cartridge",
+                    phase="Building Cartridge Game (4/5)",
+                    game_design=cartridge_game_design,
+                    level_design=cartridge_level_design,
+                    cartridge=DEFAULT_CARTRIDGE,
+                    cartridge_spec=parsed_spec,
+                )
+                cartridge_code = build_cartridge_game_code(parsed_spec, DEFAULT_CARTRIDGE)
+                _write_game_file(game_file, cartridge_code)
+
+                _set_task(task_id, status="validating", phase="Quality Validation (5/5)")
+                cartridge_report = harness.run(
+                    code=cartridge_code,
+                    game_file=game_file,
+                    python_path=python_path,
+                    runtime_timeout_sec=SMOKE_TEST_TIMEOUT_SEC,
+                    run_runtime=ENABLE_RUNTIME_SMOKE_TEST,
+                )
+                cartridge_report_dict = cartridge_report.to_dict()
+                cartridge_report_dict["attempt"] = 1
+                cartridge_report_dict["mode"] = "cartridge"
+                validation_history.append(cartridge_report_dict)
+
+                if cartridge_report.passed:
+                    _complete_task(
+                        task_id=task_id,
+                        game_file=game_file,
+                        code=cartridge_code,
+                        game_design=cartridge_game_design,
+                        level_design=cartridge_level_design,
+                        generation_mode="cartridge",
+                        quality_report=cartridge_report_dict,
+                        validation_history=validation_history,
+                    )
+                    return
+                fallback_reason = f"Cartridge quality check failed: {_error_summary(cartridge_report_dict)}"
+            else:
+                fallback_reason = "Cartridge spec generation did not return valid JSON."
+
+        _set_task(task_id, status="generating_code", phase="Freeform Code Generation (fallback)")
+        generated_code = ""
+        for attempt in range(1, MAX_CODE_ATTEMPTS + 1):
+            if attempt == 1:
+                generated_code = code_generation_agent.run(game_design, level_design)
+            else:
+                _set_task(
+                    task_id,
+                    status="repairing_code",
+                    phase=f"Repairing Code ({attempt}/{MAX_CODE_ATTEMPTS})",
+                )
+                generated_code = code_repair_agent.run(
+                    game_design=game_design,
+                    level_design=level_design,
+                    failed_code=generated_code,
+                    validation_report=validation_history[-1],
+                    attempt_number=attempt,
+                )
+
+            generated_code = sanitize_generated_code(generated_code)
+            _write_game_file(game_file, generated_code)
+
+            _set_task(task_id, status="validating", phase=f"Quality Validation ({attempt}/{MAX_CODE_ATTEMPTS})")
+            report = harness.run(
+                code=generated_code,
+                game_file=game_file,
+                python_path=python_path,
+                runtime_timeout_sec=SMOKE_TEST_TIMEOUT_SEC,
+                run_runtime=ENABLE_RUNTIME_SMOKE_TEST,
+            )
+            report_dict = report.to_dict()
+            report_dict["attempt"] = attempt
+            report_dict["mode"] = "freeform"
+            validation_history.append(report_dict)
+
+            if report.passed:
+                _complete_task(
+                    task_id=task_id,
+                    game_file=game_file,
+                    code=generated_code,
+                    game_design=game_design,
+                    level_design=level_design,
+                    generation_mode="freeform",
+                    quality_report=report_dict,
+                    validation_history=validation_history,
+                    fallback_reason=fallback_reason,
+                )
+                return
+
+        final_failure = _error_summary(validation_history[-1]) if validation_history else "unknown validation error"
+        raise RuntimeError(f"Generation failed all quality checks: {final_failure}")
+    except Exception as e:
         _set_task(
             task_id,
-            status="completed",
-            phase="Complete",
-            game_file=game_file,
-            code=code,
-            completed_at=datetime.now().isoformat(),
+            status="failed",
+            error=str(e),
+            phase="Failed",
+            failed_at=datetime.now().isoformat(),
         )
-
-    except Exception as e:
-        _set_task(task_id, status="failed", error=str(e), phase="Failed")
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -102,7 +260,54 @@ async def home(request: Request):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "game-engine", "tasks": len(_task_items_snapshot())}
+    checks = _health_checks()
+    status = "ok" if all(checks.values()) else "degraded"
+    return {
+        "status": status,
+        "service": "game-engine",
+        "tasks": len(_task_items_snapshot()),
+        "checks": checks,
+    }
+
+
+@app.get("/health/live")
+async def health_live():
+    return {"status": "ok", "service": "game-engine"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    checks = _health_checks()
+    ready = all(checks.values())
+    return {"status": "ready" if ready else "not_ready", "checks": checks}
+
+
+def _health_checks() -> Dict[str, bool]:
+    google_api_key_set = bool(os.getenv("GOOGLE_API_KEY"))
+    python_path_exists = os.path.exists(_resolve_python_path())
+    pygames_dir_writable = False
+    pygame_import_ok = False
+
+    try:
+        os.makedirs("pygames", exist_ok=True)
+        pygames_dir_writable = os.access("pygames", os.W_OK)
+    except Exception:
+        pygames_dir_writable = False
+
+    try:
+        os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
+        import pygame  # noqa: F401
+
+        pygame_import_ok = True
+    except Exception:
+        pygame_import_ok = False
+
+    return {
+        "google_api_key_set": google_api_key_set,
+        "python_path_resolved": python_path_exists,
+        "pygames_dir_writable": pygames_dir_writable,
+        "pygame_import_ok": pygame_import_ok,
+    }
 
 @app.post("/api/generate")
 async def generate_game(game_request: GameRequest, background_tasks: BackgroundTasks):
@@ -115,7 +320,9 @@ async def generate_game(game_request: GameRequest, background_tasks: BackgroundT
         "status": "queued",
         "phase": "Initializing...",
         "created_at": datetime.now().isoformat(),
-        "study_notes": text[:12000]
+        "study_notes": text[:12000],
+        "validation_history": [],
+        "generation_mode": "pending",
     })
     _prune_history()
 
@@ -145,8 +352,7 @@ async def launch_game(task_id: str):
         return JSONResponse({"error": "Game file not found"}, status_code=404)
 
     try:
-        venv_python = os.path.join(os.getcwd(), "venv", "bin", "python")
-        python_path = venv_python if os.path.exists(venv_python) else sys.executable
+        python_path = _resolve_python_path()
         subprocess.Popen([python_path, game_file])
         return {"message": "Game launched successfully", "python_path": python_path}
     except Exception as e:
@@ -161,7 +367,8 @@ async def get_history():
             "status": data.get("status"),
             "phase": data.get("phase"),
             "created_at": data.get("created_at"),
-            "completed_at": data.get("completed_at")
+            "completed_at": data.get("completed_at"),
+            "generation_mode": data.get("generation_mode"),
         })
 
     history.sort(key=lambda x: x["created_at"], reverse=True)

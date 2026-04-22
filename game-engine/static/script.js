@@ -165,20 +165,34 @@ function updateProgress(data) {
         document.getElementById(p).classList.remove('active', 'completed');
     });
 
-    let progress = 0;
+    let progress = 5;
 
-    if (status === 'generating_design' || phase.includes('Game Design')) {
+    if (status === 'queued') {
+        progress = 5;
+    } else if (status === 'generating_design' || phase.includes('Game Design')) {
         document.getElementById('phase1').classList.add('active');
-        progress = 33;
+        progress = 25;
     } else if (status === 'generating_levels' || phase.includes('Level Design')) {
         document.getElementById('phase1').classList.add('completed');
         document.getElementById('phase2').classList.add('active');
-        progress = 66;
-    } else if (status === 'generating_code' || phase.includes('Code Generation')) {
+        progress = 50;
+    } else if (
+        status === 'generating_cartridge_spec' ||
+        status === 'building_cartridge' ||
+        status === 'generating_code' ||
+        status === 'repairing_code' ||
+        phase.includes('Cartridge') ||
+        phase.includes('Code')
+    ) {
         document.getElementById('phase1').classList.add('completed');
         document.getElementById('phase2').classList.add('completed');
         document.getElementById('phase3').classList.add('active');
-        progress = 90;
+        progress = 75;
+    } else if (status === 'validating' || phase.includes('Validation')) {
+        document.getElementById('phase1').classList.add('completed');
+        document.getElementById('phase2').classList.add('completed');
+        document.getElementById('phase3').classList.add('active');
+        progress = 92;
     } else if (status === 'completed') {
         phases.forEach(p => {
             document.getElementById(p).classList.add('completed');
@@ -204,6 +218,30 @@ function showResult(data) {
     if (data.code) {
         document.getElementById('codeContent').textContent = data.code;
     }
+
+    const mode = data.generation_mode || 'unknown';
+    document.getElementById('generationMode').textContent = mode;
+
+    const qualityReport = data.quality_report || {};
+    const score = typeof qualityReport.score === 'number' ? qualityReport.score : 'n/a';
+    document.getElementById('qualityScore').textContent = String(score);
+    const fallbackNote = data.fallback_reason ? `Fallback: ${data.fallback_reason}\n\n` : '';
+    document.getElementById('qualityChecksContent').textContent = fallbackNote + formatQualityChecks(qualityReport);
+}
+
+function formatQualityChecks(report) {
+    if (!report || !Array.isArray(report.checks)) {
+        return 'No validation details available.';
+    }
+    const lines = report.checks.map(check => {
+        const status = check.passed ? 'PASS' : 'FAIL';
+        return `[${status}] ${check.name}: ${check.details}`;
+    });
+    if (report.runtime && report.runtime.details) {
+        lines.push('');
+        lines.push(`Runtime: ${report.runtime.details}`);
+    }
+    return lines.join('\n');
 }
 
 function showError(message) {
@@ -255,4 +293,7 @@ function resetForm() {
     document.getElementById('errorSection').classList.add('hidden');
 
     document.getElementById('progressFill').style.width = '0%';
+    document.getElementById('generationMode').textContent = '';
+    document.getElementById('qualityScore').textContent = '';
+    document.getElementById('qualityChecksContent').textContent = '';
 }
