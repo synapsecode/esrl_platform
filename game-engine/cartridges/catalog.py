@@ -25,6 +25,126 @@ class CartridgeDefinition:
 
 CATALOG: List[CartridgeDefinition] = [
     CartridgeDefinition(
+        cartridge_id="orbit_attract_v1",
+        display_name="Orbit & Attract",
+        module="orbit_attract_runner",
+        mechanic="gravity routing",
+        summary="Move a gravity cursor to pull correct concepts into a target zone and repel wrong ones.",
+        keywords=["sorting", "matching", "categorization", "gravity", "attract", "repel", "space"],
+        best_for=["category learning", "signal routing", "dynamic discrimination"],
+        prompt_hint="Use concise contrasting options with one precise target concept and two misleading alternatives.",
+    ),
+    CartridgeDefinition(
+        cartridge_id="conveyor_rush_v1",
+        display_name="Conveyor Rush",
+        module="conveyor_rush_runner",
+        mechanic="real-time sorting",
+        summary="Sort incoming items into bins under speed pressure.",
+        keywords=["grammar", "classification", "era", "species", "operation", "sort", "bin"],
+        best_for=["rule application", "classification drills", "rapid sorting"],
+        prompt_hint="Make bin options explicit categories and prompts short enough for quick decisions.",
+    ),
+    CartridgeDefinition(
+        cartridge_id="blueprint_builder_v1",
+        display_name="Blueprint Builder",
+        module="blueprint_builder_runner",
+        mechanic="system reconstruction",
+        summary="Place and connect concept tiles to reconstruct a coherent system.",
+        keywords=["system", "timeline", "chain", "circuit", "structure", "connect", "reconstruct"],
+        best_for=["concept mapping", "systems thinking", "structured reasoning"],
+        prompt_hint="Design each step as a structural decision where only one tile keeps the model coherent.",
+    ),
+    CartridgeDefinition(
+        cartridge_id="the_dig_v1",
+        display_name="The Dig",
+        module="dig_grid_runner",
+        mechanic="grid excavation",
+        summary="Excavate tiles to uncover the key concept fragment.",
+        keywords=["map", "process", "story", "fragment", "discover", "grid", "excavate"],
+        best_for=["discovery learning", "process reconstruction", "detail identification"],
+        prompt_hint="Frame options as plausible fragments, with one key fragment that unlocks understanding.",
+    ),
+    CartridgeDefinition(
+        cartridge_id="signal_noise_v1",
+        display_name="Signal & Noise",
+        module="signal_noise_runner",
+        mechanic="filter beam",
+        summary="Hold filter to capture valid items while letting noise pass.",
+        keywords=["pattern", "exception", "filter", "noise", "signal", "recognition", "stream"],
+        best_for=["pattern recognition", "exception handling", "precision filtering"],
+        prompt_hint="Use one valid pattern item and two near-miss distractors that tempt over-filtering.",
+    ),
+    CartridgeDefinition(
+        cartridge_id="territory_wars_v1",
+        display_name="Territory Wars",
+        module="territory_wars_runner",
+        mechanic="turn-based grid control",
+        summary="Answer correctly to claim territory on a strategic grid.",
+        keywords=["strategy", "territory", "grid", "turn", "competition", "claim", "control"],
+        best_for=["reasoning under pressure", "turn-based learning", "competitive review"],
+        prompt_hint="Make each turn decision meaningful; incorrect reasoning should clearly lose strategic ground.",
+    ),
+    CartridgeDefinition(
+        cartridge_id="chain_reaction_v1",
+        display_name="Chain Reaction",
+        module="chain_reaction_runner",
+        mechanic="causal redirect",
+        summary="Redirect a spreading chain before it hits faulty nodes.",
+        keywords=["cause", "effect", "sequence", "logic", "flow", "dependency", "pipeline"],
+        best_for=["causal reasoning", "algorithmic flow", "process logic"],
+        prompt_hint="Set up clear cause-effect branches where one path preserves validity and others break it.",
+    ),
+    CartridgeDefinition(
+        cartridge_id="negotiation_floor_v1",
+        display_name="Negotiation Floor",
+        module="negotiation_floor_runner",
+        mechanic="relational pairing",
+        summary="Match relational pairs across two changing columns.",
+        keywords=["pair", "bond", "match", "cause-effect", "equation", "vocab", "relation"],
+        best_for=["relational thinking", "matching tasks", "association building"],
+        prompt_hint="Pairs should require semantic relation, not superficial text matching.",
+    ),
+    CartridgeDefinition(
+        cartridge_id="pressure_drop_v1",
+        display_name="Pressure Drop",
+        module="pressure_drop_runner",
+        mechanic="catch and dodge",
+        summary="Catch valid falling items and dodge invalid ones.",
+        keywords=["catch", "prime", "tense", "operation", "drop", "platform", "dodge"],
+        best_for=["fast rule checks", "accuracy under pressure", "timed retrieval"],
+        prompt_hint="Use compact labels that can be parsed mid-fall, with sharply contrasted distractors.",
+    ),
+    CartridgeDefinition(
+        cartridge_id="fault_lines_v1",
+        display_name="Fault Lines",
+        module="fault_lines_runner",
+        mechanic="error localization",
+        summary="Identify the exact segment containing the error or logic break.",
+        keywords=["debug", "grammar", "proof", "argument", "error", "fault", "segment"],
+        best_for=["debugging", "error spotting", "critical reading"],
+        prompt_hint="Construct segment sets with one precise fault and two plausible non-fault alternatives.",
+    ),
+    CartridgeDefinition(
+        cartridge_id="wave_resonance_v1",
+        display_name="The Wave",
+        module="wave_resonance_runner",
+        mechanic="proximity resonance",
+        summary="Resonance fills near correct concepts and drains near wrong ones while moving to goal.",
+        keywords=["resonance", "proximity", "landscape", "meter", "signal", "distance", "field"],
+        best_for=["concept affinity", "subtle discrimination", "context sensitivity"],
+        prompt_hint="Provide beacons with nuanced distinctions so proximity choice reflects true understanding.",
+    ),
+    CartridgeDefinition(
+        cartridge_id="stack_collapse_v1",
+        display_name="Stack & Collapse",
+        module="stack_collapse_runner",
+        mechanic="column stability",
+        summary="Place falling blocks into correct semantic columns to avoid structural collapse.",
+        keywords=["stack", "hierarchy", "equation", "sentence", "structure", "collapse", "placement"],
+        best_for=["hierarchical organization", "structural reasoning", "column classification"],
+        prompt_hint="Each placement should represent a structural decision with clear stability consequences.",
+    ),
+    CartridgeDefinition(
         cartridge_id="concept_sprint_v2",
         display_name="Concept Sprint",
         module="quiz_runner",
@@ -115,16 +235,6 @@ CATALOG: List[CartridgeDefinition] = [
         prompt_hint="Prompts should test exactness of principles and precision of language.",
     ),
     CartridgeDefinition(
-        cartridge_id="sequence_sprint_v1",
-        display_name="Sequence Sprint",
-        module="sequence_sprint_runner",
-        mechanic="sliding decision cards",
-        summary="Choose the best next step in fast-moving conceptual sequences.",
-        keywords=["sequence", "steps", "workflow", "pipeline", "procedure", "lifecycle"],
-        best_for=["procedural understanding", "order-of-operations", "process reasoning"],
-        prompt_hint="Focus prompts on next-best-step reasoning with realistic process distractors.",
-    ),
-    CartridgeDefinition(
         cartridge_id="theorem_turret_v1",
         display_name="Theorem Turret",
         module="concept_defense_runner",
@@ -156,20 +266,24 @@ def heuristic_rank_cartridges(study_notes: str, game_design: str = "", level_des
     text = " ".join([study_notes or "", game_design or "", level_design or ""]).lower()
     ranks: List[Dict] = []
     for item in CATALOG:
-        score = 0.15
+        score = 0.08
         for keyword in item.keywords:
             if keyword in text:
-                score += 0.14
+                score += 0.13
+
         if item.cartridge_id.endswith("_v1") and "beginner" in text:
-            score += 0.04
+            score += 0.03
         if "timeline" in text and "sequence" in item.keywords:
+            score += 0.12
+        if "proof" in text and item.module in {"concept_defense_runner", "fault_lines_runner"}:
             score += 0.10
-        if "formula" in text and item.module == "concept_defense_runner":
+        if "classification" in text and item.module in {"lane_sort_runner", "conveyor_rush_runner"}:
+            score += 0.10
+        if "map" in text and item.module in {"blueprint_builder_runner", "dig_grid_runner"}:
+            score += 0.10
+        if "debug" in text and item.module in {"fault_lines_runner", "chain_reaction_runner"}:
             score += 0.08
-        if "classification" in text and item.module == "lane_sort_runner":
-            score += 0.08
-        if "memory" in text and item.module == "memory_matrix_runner":
-            score += 0.08
+
         score = min(0.98, score)
         ranks.append(
             {
@@ -181,4 +295,3 @@ def heuristic_rank_cartridges(study_notes: str, game_design: str = "", level_des
         )
     ranks.sort(key=lambda row: row["score"], reverse=True)
     return ranks
-
