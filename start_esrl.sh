@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BASE=~/Documents/Development/Experimental/eSRL/eSRLPlatform
+BASE=/Users/somnathumapathi/personal/esrl_platform
 
 osascript <<EOF
 tell application "Terminal"

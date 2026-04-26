@@ -1,8 +1,23 @@
 """
-eSRL Agents using direct Gemini API calls
+eSRL Agents -- LLM provider selectable via GAME_LLM_PROVIDER env var.
 """
 
+import os
+
+from claude_cli_client import ClaudeCLIClient
 from gemini_client import GeminiClient
+
+
+def _make_client():
+    """Build an LLM client based on the GAME_LLM_PROVIDER env var.
+
+    Defaults to the local Claude Code CLI; set GAME_LLM_PROVIDER=gemini to
+    fall back to the Gemini API path.
+    """
+    provider = os.getenv("GAME_LLM_PROVIDER", "claude_cli").lower()
+    if provider == "gemini":
+        return GeminiClient(os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+    return ClaudeCLIClient(os.getenv("CLAUDE_MODEL", "claude-opus-4-7"))
 
 
 # Agent prompts
@@ -37,6 +52,21 @@ Provide:
 9. **Implementation Notes** - Brief Phaser.js feasibility notes
 
 Keep it concise and implementable. Focus on creating a fun, educational experience.
+
+### Examples of the kind of game we want (aim for this caliber)
+
+Good designs find a real-world *metaphor* that is structurally identical to the concept, so playing the game IS doing the concept. Examples:
+
+- **Deadlocks / mutual exclusion** → Five hungry philosophers around a table, each needs the chopstick on their left and right to eat. If everyone grabs left first, everyone starves.
+- **Stack data structure** → A pancake chef who can only touch the top pancake. Deliver orders in the right order or send pancakes back.
+- **Recursion** → Russian nesting dolls; opening one reveals a smaller version of the same puzzle inside.
+- **TCP three-way handshake** → Two paper-airplane couriers across a windy gap doing SYN / SYN-ACK / ACK before sending the real message.
+- **Newton's third law** → An astronaut in zero-g who throws wrenches and gets pushed backward.
+- **Gradient descent** → A hiker on a foggy mountain who can only feel the slope under their feet, trying to reach the valley.
+- **Binary search** → Guessing the locked floor in a 100-story elevator with "warmer / colder" hints.
+- **Photosynthesis** → Manage one plant's sun, water, and CO2 budget across a day-night cycle.
+
+The pattern: **the failure mode of the player IS the failure mode of the concept.** Avoid quiz-shaped designs (multiple choice, drag-the-label, match-the-term) — they teach nothing the notes didn't already teach. Pick a surprising, specific metaphor.
 """
 
 LEVEL_DESIGN_PROMPT = """
@@ -122,8 +152,8 @@ Start directly with the python code. Do not pad with any text"""
 class GameDesignAgent:
     """Agent for generating game design concepts"""
 
-    def __init__(self, model_name: str = "gemini-2.5-flash"):
-        self.client = GeminiClient(model_name)
+    def __init__(self):
+        self.client = _make_client()
         self.name = "game_design_agent"
 
     def run(self, study_notes: str) -> str:
@@ -140,8 +170,8 @@ class GameDesignAgent:
 class LevelDesignAgent:
     """Agent for generating level progression"""
 
-    def __init__(self, model_name: str = "gemini-2.5-flash"):
-        self.client = GeminiClient(model_name)
+    def __init__(self):
+        self.client = _make_client()
         self.name = "level_design_agent"
 
     def run(self, game_design: str) -> str:
@@ -158,13 +188,13 @@ class LevelDesignAgent:
 class CodeGenerationAgent:
     """Agent for generating PyGame code"""
 
-    def __init__(self, model_name: str = "gemini-2.5-flash"):
-        self.client = GeminiClient(model_name)
+    def __init__(self):
+        self.client = _make_client()
         self.name = "code_generation_agent"
 
     def run(self, game_design: str, level_design: str) -> str:
-        """Generate Phaser.js code from designs"""
-        print(f"\n💻 {self.name}: Generating Phaser.js code...")
+        """Generate Pygame code from designs"""
+        print(f"\n💻 {self.name}: Generating Pygame code...")
 
         combined_input = f"""Game Design:
 {game_design}
@@ -172,7 +202,7 @@ class CodeGenerationAgent:
 Level Design:
 {level_design}
 
-Please generate a complete, working Phaser.js game based on the above design."""
+Please generate a complete, working Pygame game based on the above design."""
 
         result = self.client.generate(
             prompt=combined_input,

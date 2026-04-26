@@ -4,7 +4,7 @@ AI-powered PyGame mini-game creator that transforms study notes into interactive
 
 ## Features
 
-- **AI-Powered Generation**: Uses Gemini AI to create game designs, level progressions, and PyGame code
+- **AI-Powered Generation**: Uses the local Claude Code CLI (default) or Gemini API to create game designs, level progressions, and PyGame code
 - **Web Interface**: Beautiful, modern UI built with FastAPI and Jinja2
 - **Real-time Progress**: Watch your game being generated in real-time
 - **Auto-Launch**: Automatically launches generated games
@@ -16,15 +16,27 @@ AI-powered PyGame mini-game creator that transforms study notes into interactive
 ## Setup
 
 1. Clone the repository
-2. Create a `.env` file with your Google API key:
-   ```
-   GOOGLE_API_KEY=your_api_key_here
-   ```
+2. Pick an LLM provider (default is the local Claude Code CLI):
+   - **Claude Code CLI (default)** -- requires the `claude` binary on PATH
+     and an authenticated Claude Code session (run `claude` once
+     interactively to log in). No API key needed.
+   - **Gemini** -- create a `.env` file with `GOOGLE_API_KEY=...` and set
+     `GAME_LLM_PROVIDER=gemini`.
 3. Run the startup script:
    ```bash
    ./start_server.sh
    ```
 4. Open your browser to `http://localhost:8000`
+
+### LLM provider configuration
+
+| Env var | Default | Purpose |
+| --- | --- | --- |
+| `GAME_LLM_PROVIDER` | `claude_cli` | `claude_cli` or `gemini` |
+| `CLAUDE_MODEL` | `claude-opus-4-7` | Model passed to `claude --model` |
+| `CLAUDE_CLI_PATH` | `claude` | Override if `claude` is not on PATH |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Only used when provider is `gemini` |
+| `GOOGLE_API_KEY` | _(unset)_ | Required only for the `gemini` provider |
 
 ## Usage
 
@@ -64,7 +76,7 @@ python run.py
 ## Requirements
 
 - Python 3.12+
-- Google API Key (Gemini)
+- Either the local `claude` CLI (default provider, no API key needed) or a `GOOGLE_API_KEY` for the Gemini fallback
 - PyGame
 - FastAPI
 - See `requirements.txt` for full list
@@ -89,7 +101,7 @@ python run.py
 
 - **Backend**: FastAPI, Python 3.12
 - **Frontend**: Vanilla JS, CSS3, Jinja2
-- **AI**: Google Gemini 2.5 Flash
+- **AI**: Local Claude Code CLI (Opus 4.7) by default; Google Gemini 2.5 Flash as a fallback
 - **Game Engine**: PyGame
 - **Async Tasks**: BackgroundTasks
 
