@@ -26,6 +26,21 @@ font_xs = pygame.font.SysFont("arial", 12)
 GAME_AREA = pygame.Rect(0, 60, 760, 640)
 TANK_AREA = pygame.Rect(790, 100, 180, 520)
 
+# Road rectangles (drawn). Top, middle, and bottom horizontals + one vertical.
+ROAD_RECTS = [
+    pygame.Rect(GAME_AREA.left, 160, GAME_AREA.width, 70),  # top horizontal
+    pygame.Rect(GAME_AREA.left, 350, GAME_AREA.width, 70),  # middle horizontal
+    pygame.Rect(GAME_AREA.left, 540, GAME_AREA.width, 70),  # bottom horizontal
+    pygame.Rect(370, GAME_AREA.top, 70, GAME_AREA.height),  # vertical
+]
+# Drivable bands = road rects shrunk by van half-size (van is ~44x28, so 22 / 14).
+DRIVABLE = [
+    pygame.Rect(GAME_AREA.left + 22, 174, GAME_AREA.width - 44, 43),
+    pygame.Rect(GAME_AREA.left + 22, 364, GAME_AREA.width - 44, 43),
+    pygame.Rect(GAME_AREA.left + 22, 554, GAME_AREA.width - 44, 43),
+    pygame.Rect(392, GAME_AREA.top + 14, 27, GAME_AREA.height - 28),
+]
+
 MENU, INSTRUCTIONS, LEVEL_INTRO, PLAYING, END_SCREEN = 0,1,2,3,4
 
 class Particle:
@@ -54,8 +69,11 @@ class Van:
         if keys[pygame.K_UP] or keys[pygame.K_w]: dy -= self.speed
         if keys[pygame.K_DOWN] or keys[pygame.K_s]: dy += self.speed
         nx = self.x + dx; ny = self.y + dy
-        if GAME_AREA.left + 20 <= nx <= GAME_AREA.right - 20: self.x = nx
-        if GAME_AREA.top + 20 <= ny <= GAME_AREA.bottom - 20: self.y = ny
+        # Move x and y independently so the van slides along road edges.
+        if any(d.collidepoint(nx, self.y) for d in DRIVABLE):
+            self.x = nx
+        if any(d.collidepoint(self.x, ny) for d in DRIVABLE):
+            self.y = ny
     def draw(self, surf):
         # Shadow
         pygame.draw.ellipse(surf, (40,40,40), (self.x-22, self.y+12, 44, 8))
@@ -137,12 +155,12 @@ class Game:
         self.variable_cost = 250
         self.selling_price = 400
         self.contribution = 150
-        self.fixed_cost = 4500
-        self.duration = 90 if level_num == 1 else 100
-        
+        self.fixed_cost = 1500
+        self.duration = 25 if level_num == 1 else 30
+
         self.bep_line = self.fixed_cost
-        self.mos_line = self.fixed_cost + 1500  # 10 boxes above BEP
-        self.profit_target = 750  # for level 3
+        self.mos_line = self.fixed_cost + 500  # ~3 boxes above BEP
+        self.profit_target = 250  # for level 3
         self.tank_max = self.fixed_cost * 2
         
         self.tank_value = self.bep_line
@@ -175,7 +193,7 @@ class Game:
             "Drive to the orange MARKET and press SPACE to BUY crates.",
             "Now drive to a HOUSE (yellow !) and press SPACE to DELIVER.",
             "Watch: only the CONTRIBUTION (Rs 150) fills the tank!",
-            "The DRAIN is fixed cost — it leaks no matter what. Sell ≥ 30 boxes to break even!"
+            "The DRAIN is fixed cost — it leaks no matter what. Sell ≥ 10 boxes to break even!"
         ]
         self.end_state = None  # "win" or "lose"
         self.end_msg = ""
@@ -207,17 +225,17 @@ class Game:
         if self.level_num == 2 and not self.event_triggered:
             if self.time_left <= self.duration * 0.5:
                 self.event_triggered = True
-                self.fixed_cost += 1500
+                self.fixed_cost += 500
                 self.bep_line = self.fixed_cost
-                self.mos_line = self.bep_line + 1500
+                self.mos_line = self.bep_line + 500
                 rt = max(1, self.time_left)
-                self.drain_per_sec += 1500 / rt
+                self.drain_per_sec += 500 / rt
                 self.popup = ("event", "DIESEL PRICE UP!",
-                    "Fixed costs rose by Rs 1500.\n"
+                    "Fixed costs rose by Rs 500.\n"
                     "Notice: your DRAIN got FASTER, not your splash.\n"
                     "Diesel & loan are FIXED costs (per month),\n"
                     "not variable (per trip)!\n"
-                    "New BEP target = 40 boxes.")
+                    "New BEP target ≈ 14 boxes.")
         
         # Level 3 discount offer
         if self.level_num == 3 and not self.discount_offered:
@@ -226,7 +244,7 @@ class Game:
                 self.popup = ("discount", "CUSTOMER OFFER!",
                     "A buyer wants to pay Rs 350 instead of Rs 400.\n"
                     "ACCEPT: Contribution drops to Rs 100.\n"
-                    "  New BEP = 4500/100 = 45 boxes (faster customers).\n"
+                    "  New BEP = 1500/100 = 15 boxes (faster customers).\n"
                     "REFUSE: Contribution stays Rs 150.\n"
                     "  But 2 customers go elsewhere.")
         
@@ -334,7 +352,7 @@ class Game:
                 self.contribution = 100
                 self.house_cooldown_frames = 90
                 self.popup = None
-                self.message = "Accepted! Contribution Rs 100. New BEP = 45 boxes."
+                self.message = "Accepted! Contribution Rs 100. New BEP = 15 boxes."
                 self.message_time = 3.0
             elif no_rect.collidepoint(pos):
                 self.discount_accepted = False
@@ -353,12 +371,14 @@ class Game:
         surf.fill(BG)
         # Game area
         pygame.draw.rect(surf, GRASS, GAME_AREA)
-        # Roads (horizontal middle, vertical middle)
-        pygame.draw.rect(surf, ROAD, (GAME_AREA.left, 350, GAME_AREA.width, 70))
-        pygame.draw.rect(surf, ROAD, (370, GAME_AREA.top, 70, GAME_AREA.height))
-        # Lane markers
+        # Roads (three horizontals + one vertical so every building has road access)
+        for r in ROAD_RECTS:
+            pygame.draw.rect(surf, ROAD, r)
+        # Lane markers — horizontal roads at y=193, 383, 573; vertical road at x=403
         for x in range(GAME_AREA.left+10, GAME_AREA.right, 32):
+            pygame.draw.rect(surf, YELLOW, (x, 193, 18, 3))
             pygame.draw.rect(surf, YELLOW, (x, 383, 18, 3))
+            pygame.draw.rect(surf, YELLOW, (x, 573, 18, 3))
         for y in range(GAME_AREA.top+10, GAME_AREA.bottom, 32):
             pygame.draw.rect(surf, YELLOW, (403, y, 3, 18))
         
@@ -583,8 +603,8 @@ def draw_instructions():
         "",
         "ECONOMICS (per box):",
         "  Selling Price = Rs 400  |  Variable Cost = Rs 250  |  Contribution = Rs 150",
-        "  Fixed Cost (loan, wages, insurance) = Rs 4,500 per month — DRAINS the tank.",
-        "  Break-Even Point = Fixed Cost / Contribution = 4500 / 150 = 30 boxes.",
+        "  Fixed Cost (loan, wages, insurance) = Rs 1,500 per month — DRAINS the tank.",
+        "  Break-Even Point = Fixed Cost / Contribution = 1500 / 150 = 10 boxes.",
         "",
         "CONTROLS:",
         "  WASD / ARROW KEYS  -  Drive the van",
@@ -618,19 +638,19 @@ def draw_level_intro(level_num):
         3: ("LEVEL 3: The Discount Trap", "Price, Contribution, and the Shifting BEP"),
     }
     descs = {
-        1: ["Sell at least 30 boxes to reach the BEP line.",
-            "Fixed Cost = Rs 4,500  |  Contribution = Rs 150 / box",
-            "BEP = 4,500 / 150 = 30 boxes",
-            "Time: 90 seconds"],
-        2: ["Finish in the GREEN Margin-of-Safety zone (~40 boxes).",
-            "Fixed Cost = Rs 4,500. A mid-month event will hit!",
+        1: ["Sell at least 10 boxes to reach the BEP line.",
+            "Fixed Cost = Rs 1,500  |  Contribution = Rs 150 / box",
+            "BEP = 1,500 / 150 = 10 boxes",
+            "Time: 25 seconds"],
+        2: ["Finish in the GREEN Margin-of-Safety zone (~14 boxes).",
+            "Fixed Cost = Rs 1,500. A mid-month event will hit!",
             "Watch carefully: it changes the DRAIN, not the splash.",
-            "Time: 100 seconds"],
-        3: ["Profit at least Rs 750 above BEP to win!",
+            "Time: 30 seconds"],
+        3: ["Profit at least Rs 250 above BEP to win!",
             "Mid-month a customer will request a discount.",
             "Accept = lower contribution, more demand.",
             "Refuse = full contribution, fewer customers.",
-            "Time: 100 seconds"],
+            "Time: 30 seconds"],
     }
     title, sub = titles[level_num]
     t = font_lg.render(title, True, YELLOW)

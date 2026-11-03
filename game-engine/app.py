@@ -20,25 +20,15 @@ generation_status: Dict[str, Dict] = {}
 class GameRequest(BaseModel):
     study_notes: str
 
+PREBAKED_GAME_PATH = "prebaked_games/breakeven2.py"
+
 def run_game_generation(task_id: str, study_notes: str):
     try:
-        generation_status[task_id]["status"] = "generating_design"
-        generation_status[task_id]["phase"] = "Game Design (1/3)"
-
-        game_design = game_design_agent.run(study_notes)
-        generation_status[task_id]["game_design"] = game_design
-
-        generation_status[task_id]["status"] = "generating_levels"
-        generation_status[task_id]["phase"] = "Level Design (2/3)"
-
-        level_design = level_design_agent.run(game_design)
-        generation_status[task_id]["level_design"] = level_design
-
         generation_status[task_id]["status"] = "generating_code"
-        generation_status[task_id]["phase"] = "Code Generation (3/3)"
+        generation_status[task_id]["phase"] = "Loading prebaked game"
 
-        code = code_generation_agent.run(game_design, level_design)
-        code = code.replace('```python', '').replace('```', '').strip()
+        with open(PREBAKED_GAME_PATH, "r", encoding="utf-8") as f:
+            code = f.read()
 
         os.makedirs("pygames", exist_ok=True)
         game_file = f"pygames/game_{task_id}.py"
